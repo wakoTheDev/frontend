@@ -1,12 +1,16 @@
 import { createClient } from '@supabase/supabase-js'
 import dotenv from 'dotenv'
+import { fileURLToPath } from 'url'
+import { dirname, resolve } from 'path'
 
-// Ensure backend/.env is loaded before reading env vars
-dotenv.config()
+// Resolve correct path to backend/.env regardless of where the file is called from
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = dirname(__filename)
+dotenv.config({ path: resolve(__dirname, '../../.env') })
 
 const url =
   process.env.SUPABASE_URL ||
-  process.env.VITE_SUPABASE_URL // fallback if using same var name as frontend
+  process.env.VITE_SUPABASE_URL
 
 const serviceKey =
   process.env.SUPABASE_SERVICE_ROLE_KEY ||
@@ -14,10 +18,8 @@ const serviceKey =
 
 if (!url || !serviceKey) {
   throw new Error(
-    'SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY (or VITE_SUPABASE_URL/VITE_SUPABASE_SERVICE_ROLE_KEY) must be set in backend/.env'
+    'SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY must be set in backend/.env or Vercel environment variables'
   )
 }
 
 export const supabaseAdmin = createClient(url, serviceKey)
-
-
