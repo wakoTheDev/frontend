@@ -3,7 +3,7 @@ import { supabase } from './supabaseClient'
 // Base URL for backend API.
 // In development we proxy `/api` to http://localhost:3001 via Vite.
 // In production (e.g. Vercel), set VITE_API_BASE_URL to your backend URL, e.g. https://your-backend.example.com/api
-const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api'
+const API_BASE = "https://web-production-0845d.up.railway.app/predict"
 const SETTINGS_KEY = 'cropcare-app-settings'
 const OFFLINE_CACHE_KEY = 'cropcare-offline-analysis-cache'
 
