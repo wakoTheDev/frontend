@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import { useTranslation } from '../contexts/AppSettingsContext'
+import { dashboardPath } from '../constants/routes'
 import Testimonials from '../components/Testimonials'
 
 const APP_VERSION = '1.0.0'
@@ -53,8 +54,8 @@ export default function About() {
         <section className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-6 shadow-sm">
           <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-3">{t('legal')}</h2>
           <ul className="space-y-2 text-slate-600 dark:text-slate-300 text-sm">
-            <li><Link to="/terms" className="text-emerald-600 dark:text-emerald-400 hover:underline">{t('termsOfService')}</Link></li>
-            <li><Link to="/privacy" className="text-emerald-600 dark:text-emerald-400 hover:underline">{t('privacyPolicy')}</Link></li>
+            <li><Link to={dashboardPath('terms')} className="text-emerald-600 dark:text-emerald-400 hover:underline">{t('termsOfService')}</Link></li>
+            <li><Link to={dashboardPath('privacy')} className="text-emerald-600 dark:text-emerald-400 hover:underline">{t('privacyPolicy')}</Link></li>
             <li><strong>Data handling:</strong> We store your account data and analysis history securely. Plant images and results are used only to provide the service and improve our models with your consent (see Settings).</li>
           </ul>
         </section>
@@ -64,7 +65,7 @@ export default function About() {
           <ul className="space-y-2 text-slate-600 dark:text-slate-300 text-sm">
             <li><strong>Awards/Certifications:</strong> — (Add when available)</li>
             <li><strong>Partners & collaborators:</strong> Agricultural research partners, extension services.</li>
-            <li><strong>Technologies used:</strong> AI/ML crop analysis models, OpenAI for recommendations and insights, Firebase (Authentication, Firestore, Storage), React, Node.js/Express.</li>
+            <li><strong>Technologies used:</strong> AI/ML crop analysis models, OpenAI for recommendations and insights, Supabase (Authentication, Postgres, Storage), React, Node.js/Express.</li>
           </ul>
         </section>
 

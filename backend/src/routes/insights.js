@@ -4,31 +4,40 @@ import { logger } from '../utils/logger.js'
 
 export const insightsRouter = Router()
 
+function fallbackInsights(analysisSummary = {}) {
+  const crop = analysisSummary?.cropType || 'Crop'
+  const accuracy = analysisSummary?.accuracyRate
+  const accText = typeof accuracy === 'number' ? `${accuracy}%` : 'N/A'
+  return `${crop} analysis completed. Current confidence is ${accText}. Continue monitoring leaf color changes, lesion spread, and moisture conditions over the next 3-5 days. If symptoms worsen, apply targeted treatment early and isolate heavily affected leaves.`
+}
+
 insightsRouter.post('/insights', async (req, res) => {
   try {
     const { analysisSummary } = req.body || {}
     logger.debug('POST /api/insights', { analysisSummary })
-    const text = await getInsightsFromOpenAI(analysisSummary)
+    const aiResult = await getInsightsFromOpenAI(analysisSummary)
+    const insights =
+      typeof aiResult === 'string'
+        ? aiResult
+        : (typeof aiResult?.insights === 'string' ? aiResult.insights : '')
+    const recoveryRate =
+      typeof aiResult === 'object' && typeof aiResult?.recoveryRate === 'number'
+        ? aiResult.recoveryRate
+        : null
+
     logger.info('Insights generated successfully')
-    res.json({ insights: text })
+    res.json({
+      insights: insights || fallbackInsights(analysisSummary),
+      recoveryRate,
+    })
   } catch (err) {
     logger.error('Insights error:', err.message || err)
-    
-    // Provide user-friendly error messages
-    let statusCode = 500
-    let errorMessage = err.message || 'Failed to get insights'
-    
-    if (err.message?.includes('API key') || err.message?.includes('OPEN_ROUTER_API_KEY')) {
-      statusCode = 503 // Service Unavailable - configuration issue
-      errorMessage = 'OpenRouter API key is not configured correctly. Please check backend/.env file.'
-    } else if (err.message?.includes('quota') || err.message?.includes('rate limit')) {
-      statusCode = 503
-      errorMessage = 'OpenRouter API quota exceeded or rate limit reached. Please check your account.'
-    }
-    
-    res.status(statusCode).json({ 
-      message: errorMessage,
-      error: process.env.NODE_ENV === 'development' ? err.message : undefined
+    // Return graceful fallback text so frontend always has insights
+    const { analysisSummary } = req.body || {}
+    res.status(200).json({
+      insights: fallbackInsights(analysisSummary),
+      recoveryRate: null,
+      degraded: true,
     })
   }
 })

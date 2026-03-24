@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { Smartphone, Sparkles } from 'lucide-react'
 import ImageCarousel from './ImageCarousel'
 import GetStartedModal from './GetStartedModal'
-import { getUserProfile } from '../lib/firestore'
+import { getUserProfile } from '../lib/supabase'
 
 export default function HeroSection() {
   const { user } = useAuth()

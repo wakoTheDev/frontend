@@ -9,7 +9,7 @@ import StickyNavbar from './StickyNavbar'
 import MainFooter from './MainFooter'
 import LocationPrompt from './LocationPrompt'
 import GetStartedModal from './GetStartedModal'
-import { getUserProfile } from '../lib/firestore'
+import { getUserProfile } from '../lib/supabase'
 
 export default function DashboardLayout() {
   const { theme } = useTheme()
@@ -24,23 +24,9 @@ export default function DashboardLayout() {
     if (user?.uid) {
       prefetchProfile(user.uid)
       prefetchHistory(user.uid)
-      
-      // Check if location permission was already granted
-      getUserProfile(user.uid).then((profile) => {
-        if (!profile?.locationPermissionGranted && !locationPromptShown) {
-          setShowLocationPrompt(true)
-          setLocationPromptShown(true)
-        }
-        
-        // Show Get Started guide for new users who haven't dismissed it
-        // Only show on dashboard home page
-        if (location.pathname === '/' && !profile?.getStartedGuideDismissed && !showGetStartedGuide) {
-          // Small delay to let page load
-          setTimeout(() => {
-            setShowGetStartedGuide(true)
-          }, 1000)
-        }
-      })
+      // We still prefetch the profile, but no longer auto-open prompts.
+      // Location and Get Started guide can be triggered explicitly by the user (e.g. from Settings).
+      getUserProfile(user.uid).catch(() => {})
     }
   }, [user?.uid, prefetchProfile, prefetchHistory, locationPromptShown, location.pathname, showGetStartedGuide])
 

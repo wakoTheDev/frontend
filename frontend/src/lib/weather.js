@@ -1,9 +1,9 @@
 /**
- * Weather service for fetching weather data from OpenWeatherMap API
- * Stores weather alerts in Firebase for historical tracking
+ * Weather service for fetching weather data from OpenWeatherMap API.
+ * Alert history is stored in Supabase (`weatherAlertsStore.js`).
  */
 
-import { storeWeatherAlert as storeAlert, getUserWeatherAlerts as getUserAlerts } from './firestore'
+import { storeWeatherAlert as storeAlert, getUserWeatherAlerts as getUserAlerts } from './weatherAlertsStore'
 
 // OpenWeatherMap API key (should be stored in environment variable)
 // For now, using a placeholder - in production, use process.env.VITE_WEATHER_API_KEY
@@ -120,7 +120,7 @@ export function shouldSendWeatherAlert(weatherData) {
 }
 
 /**
- * Store weather alert in Firebase
+ * Store weather alert in Supabase
  */
 export async function storeWeatherAlert(userId, weatherData, alertType = 'weather') {
   return storeAlert(userId, weatherData, alertType)

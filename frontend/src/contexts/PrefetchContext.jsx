@@ -1,5 +1,6 @@
 import { createContext, useContext, useCallback, useRef } from 'react'
-import { getUserProfile, getAnalysisHistory } from '../lib/firestore'
+import { getUserProfile } from '../lib/supabase'
+import { getAnalysisHistory } from '../lib/analysisStore'
 
 const PrefetchContext = createContext(null)
 

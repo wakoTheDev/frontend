@@ -20,7 +20,46 @@ Your insights should:
 - Explain the potential impact if left untreated
 - Provide context about recovery expectations
 
-Write 3-5 sentences that are informative, professional, and help farmers understand their crop's condition.`
+Write 3-5 sentences that are informative, professional, and help farmers understand their crop's condition.
+
+When I ask you for insights, you MUST respond in strict JSON with this exact shape:
+{
+  "recoveryRate": <number between 0 and 100>,
+  "insights": "<text, 3-5 sentences>"
+}
+Do not include any other keys, explanations, or markdown. JSON only.`
+
+const systemChat = `You are CropCare Assistant, an AI agronomy and crop health assistant.
+
+You are helping farmers and agronomists who are using the AI-Powered CropCare dashboard.
+
+LANGUAGE:
+- Detect the language of each user message.
+- You MUST fully support both English and Kiswahili (Swahili).
+- If the user writes in Kiswahili, answer entirely in natural Kiswahili.
+- If the user writes in English, answer in English.
+- If the user mixes languages, prefer Kiswahili when most of the message is Kiswahili.
+
+CRITICAL RELIABILITY RULES (ALWAYS FOLLOW THESE):
+- Base your answers ONLY on:
+  - The analysis and weather context I give you
+  - General, widely accepted agronomy best practices
+- If the question requires information you do NOT have (for example, exact local regulations,
+  product brands, or precise weather for a location you were not given), clearly say you
+  don't know and suggest how the user can verify or get local advice.
+- NEVER invent precise product names, chemical formulations, or dosages. Use generic
+  descriptions (e.g. "dawa ya kuua fangasi iliyoidhinishwa kulingana na maelekezo ya kifurushi"
+  / "a registered copper-based fungicide according to the label").
+- When talking about weather, use the provided weather/forecast context and avoid
+  making up exact future values you were not given.
+- Remind users to confirm critical decisions with a local agronomist or extension officer.
+
+STYLE:
+- Answer clearly and practically.
+- When relevant, refer back to their crop analysis metrics, crop/leaf type, recommendations,
+  insights, and weather data I provide.
+- If the user asks for actions, provide concrete, step-by-step advice.
+- Keep responses concise but helpful.`
 
 function validateApiKey(apiKey) {
   if (!apiKey || typeof apiKey !== 'string') {
@@ -31,7 +70,7 @@ function validateApiKey(apiKey) {
   return trimmed.startsWith('sk-or-v1-') && trimmed.length > 20
 }
 
-async function chat(system, userContent) {
+async function chat(system, userContent, historyMessages = []) {
   const apiKey = process.env.OPEN_ROUTER_API_KEY?.trim()
   
   if (!apiKey) {
@@ -47,6 +86,18 @@ async function chat(system, userContent) {
   const modelName = model.startsWith('openai/') ? model : `openai/${model}`
   
   try {
+    const safeHistory =
+      Array.isArray(historyMessages)
+        ? historyMessages
+            .filter(
+              (m) =>
+                m &&
+                typeof m.content === 'string' &&
+                (m.role === 'user' || m.role === 'assistant')
+            )
+            .slice(-10)
+        : []
+
     const response = await fetch(OPENROUTER_API_URL, {
       method: 'POST',
       headers: {
@@ -59,6 +110,7 @@ async function chat(system, userContent) {
         model: modelName,
         messages: [
           { role: 'system', content: system },
+          ...safeHistory,
           { role: 'user', content: userContent },
         ],
         max_tokens: 400,
@@ -126,9 +178,71 @@ export async function getInsightsFromOpenAI(analysisSummary) {
 ${cropType ? `- Identified crop/leaf type: ${cropType}` : ''}
 ${imageDescription ? `- Image Description: ${imageDescription}` : ''}
 
-Provide detailed insights about what these metrics indicate about the crop's health condition.`
+Provide detailed insights about what these metrics indicate about the crop's health condition.
+
+Remember: respond ONLY with JSON: {"recoveryRate": <0-100>, "insights": "<text>"}.`
   } else {
-    userContent = `Analysis: ${String(analysisSummary || 'No data')}\n\nProvide insights.`
+    userContent = `Analysis: ${String(analysisSummary || 'No data')}\n\nProvide insights.
+
+Remember: respond ONLY with JSON: {"recoveryRate": <0-100>, "insights": "<text>"}.`
   }
-  return chat(systemInsights, userContent)
+  const raw = await chat(systemInsights, userContent)
+  try {
+    const parsed = JSON.parse(raw)
+    const recoveryRate =
+      typeof parsed.recoveryRate === 'number' ? Math.max(0, Math.min(100, parsed.recoveryRate)) : null
+    const insights = typeof parsed.insights === 'string' ? parsed.insights.trim() : raw
+    return { recoveryRate, insights }
+  } catch {
+    // Fallback: treat whole response as insights only
+    return { recoveryRate: null, insights: raw }
+  }
+}
+
+// General chat for the in-app assistant. Optionally receives recent analysis, weather context, and conversation history.
+export async function chatWithOpenAI(question, context = {}, history = []) {
+  let userContent = ''
+  try {
+    const ctx = context && typeof context === 'object' ? context : {}
+    const analysisSnippet =
+      ctx.timeTaken || ctx.accuracyRate || ctx.recoveryRate || ctx.cropType
+        ? `Here is the latest analysis context (if any):\n- Time Taken: ${
+            ctx.timeTaken ?? 'N/A'
+          }s\n- Accuracy: ${ctx.accuracyRate ?? 'N/A'}%\n- Recovery: ${
+            ctx.recoveryRate ?? 'N/A'
+          }%\n${ctx.cropType ? `- Crop/leaf type: ${ctx.cropType}\n` : ''}\n`
+        : ''
+
+    let weatherSnippet = ''
+    if (ctx.weather) {
+      const w = ctx.weather
+      weatherSnippet = `\nLatest weather data for the user's farm:\n- Condition: ${
+        w.condition ?? 'Unknown'
+      }\n- Temperature: ${w.temperature ?? 'N/A'}°C (feels like ${
+        w.feelsLike ?? 'N/A'
+      }°C)\n- Humidity: ${w.humidity ?? 'N/A'}%\n- Wind speed: ${
+        w.windSpeed ?? 'N/A'
+      } m/s\n${w.description ? `- Description: ${w.description}\n` : ''}${
+        w.forecastSummary ? `- Short forecast: ${w.forecastSummary}\n` : ''
+      }\n`
+    }
+
+    userContent = `${analysisSnippet}${weatherSnippet}User question: ${question}`
+  } catch {
+    userContent = `User question: ${question}`
+  }
+
+  const safeHistory =
+    Array.isArray(history)
+      ? history
+          .filter(
+            (m) =>
+              m &&
+              typeof m.content === 'string' &&
+              (m.role === 'user' || m.role === 'assistant')
+          )
+          .slice(-10)
+      : []
+
+  return chat(systemChat, userContent, safeHistory)
 }

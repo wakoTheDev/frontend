@@ -1,10 +1,10 @@
 import { useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { useTranslation } from '../contexts/AppSettingsContext'
-import { addFeedback } from '../lib/firestore'
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
-import { storage } from '../lib/firebase'
+import { sendFeedback } from '../lib/api'
 import { X, Upload, CheckCircle } from 'lucide-react'
+import { submitFeedbackToSupabase } from '../lib/feedbackStore'
+import { SUPPORT_EMAIL } from '../constants/support'
 
 const FEEDBACK_TYPES = [
   { id: 'suggestion', label: 'Send Feedback / Suggestion' },
@@ -21,7 +21,6 @@ export default function Feedback() {
   const [rating, setRating] = useState(0)
   const [survey, setSurvey] = useState('')
   const [screenshots, setScreenshots] = useState([])
-  const [uploadingScreenshots, setUploadingScreenshots] = useState(false)
   const [sent, setSent] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -44,30 +43,14 @@ export default function Feedback() {
     setScreenshots((prev) => prev.filter((_, i) => i !== index))
   }
 
-  const uploadScreenshots = async () => {
-    if (screenshots.length === 0) return []
-    
-    setUploadingScreenshots(true)
-    const uploadPromises = screenshots.map(async (file, index) => {
-      try {
-        const storageRef = ref(storage, `feedback/${user?.uid || 'anonymous'}/${Date.now()}_${index}_${file.name}`)
-        await uploadBytes(storageRef, file)
-        const url = await getDownloadURL(storageRef)
-        return url
-      } catch (err) {
-        console.error('Failed to upload screenshot:', err)
-        return null
-      }
-    })
-    
-    const urls = await Promise.all(uploadPromises)
-    setUploadingScreenshots(false)
-    return urls.filter(url => url !== null)
-  }
-
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
+
+    if (!user?.uid) {
+      setError('Please sign in to submit feedback.')
+      return
+    }
     
     // Validation
     if (!message.trim()) {
@@ -82,19 +65,31 @@ export default function Feedback() {
     
     setLoading(true)
     try {
-      // Upload screenshots first
-      const screenshotUrls = await uploadScreenshots()
-      
-      // Submit feedback to Firebase
-      await addFeedback(user?.uid, {
+      // Upload screenshots + save to Supabase
+      const submitRes = await submitFeedbackToSupabase({
+        userId: user?.uid || user?.id || null,
+        userEmail: user?.email ?? null,
         type,
         message: message.trim(),
         rating: rating || null,
         survey: survey.trim() || null,
-        screenshotCount: screenshots.length,
-        screenshotUrls,
-        email: user?.email ?? null,
+        screenshotFiles: screenshots,
       })
+
+      // Notify owners by email in real time (backend)
+      try {
+        await sendFeedback({
+          type,
+          message: message.trim(),
+          rating: rating || null,
+          survey: survey.trim() || null,
+          screenshotUrls: submitRes?.screenshot_signed_urls || [],
+          userEmail: user?.email ?? null,
+          userId: user?.uid || user?.id || null,
+        })
+      } catch (emailErr) {
+        console.warn('Feedback email dispatch failed (feedback still stored):', emailErr)
+      }
       
       // Success - reset form
       setSent(true)
@@ -108,7 +103,6 @@ export default function Feedback() {
       setError(err.message || 'Failed to send feedback. Please check your connection and try again.')
     } finally {
       setLoading(false)
-      setUploadingScreenshots(false)
     }
   }
 
@@ -121,10 +115,9 @@ export default function Feedback() {
               <CheckCircle className="w-8 h-8 text-emerald-600 dark:text-emerald-400" />
             </div>
           </div>
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-white mb-4">{t('feedbackTitle')}</h1>
+          <h1 className="text-2xl font-bold text-slate-900 dark:text-white mb-4">Help us improve CropCare by sharing your feedback, reporting issues, or suggesting new features.</h1>
           <div className="bg-emerald-500/30 dark:bg-emerald-900/30 backdrop-blur-sm border border-emerald-400/50 dark:border-emerald-700 rounded-xl p-6 text-emerald-800 dark:text-emerald-200 mb-6">
-            <p className="font-medium text-lg">{t('thankYouFeedback')}</p>
-            <p className="text-sm mt-2 opacity-90">We appreciate your input and will review it soon.</p>
+            <p className="font-medium text-lg">Thank you for your feedback! We’ll review it and get back to you if needed.</p>
           </div>
           <button 
             type="button" 
@@ -147,7 +140,7 @@ export default function Feedback() {
 
   return (
     <div className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 py-12 space-y-6">
-      <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100">{t('feedbackTitle')}</h1>
+      <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100">Help us improve CropCare by sharing your feedback, reporting issues, or suggesting new features.</h1>
       <p className="text-slate-600 dark:text-slate-400">
         Help us improve CropCare by sharing your feedback, reporting issues, or suggesting new features.
       </p>
@@ -160,29 +153,23 @@ export default function Feedback() {
         )}
 
         <section className="glass-card dark:glass-card-dark rounded-xl p-6">
-          <h2 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">{t('type')}</h2>
-          <div className="flex flex-wrap gap-3">
-            {FEEDBACK_TYPES.map((typeOpt) => (
-              <label 
-                key={typeOpt.id} 
-                className={`inline-flex items-center gap-2 cursor-pointer px-4 py-2 rounded-lg transition-all ${
-                  type === typeOpt.id 
-                    ? 'bg-emerald-600 text-white' 
-                    : 'bg-white/50 dark:bg-slate-700/50 text-slate-700 dark:text-slate-300 hover:bg-white/70 dark:hover:bg-slate-700/70'
-                }`}
-              >
-                <input 
-                  type="radio" 
-                  name="type" 
-                  value={typeOpt.id} 
-                  checked={type === typeOpt.id} 
-                  onChange={() => setType(typeOpt.id)} 
-                  className="sr-only" 
-                />
-                <span className="text-sm font-medium">{typeOpt.label}</span>
-              </label>
-            ))}
-          </div>
+          <label className="block">
+            <h2 className="text-lg font-semibold text-slate-900 dark:text-white mb-3">
+              {t('type')}
+            </h2>
+            <select
+              value={type}
+              onChange={(e) => setType(e.target.value)}
+              aria-label="Feedback type"
+              className="w-full rounded-lg glass-input px-4 py-3 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-emerald-500/50 focus:outline-none backdrop-blur-sm"
+            >
+              {FEEDBACK_TYPES.map((typeOpt) => (
+                <option key={typeOpt.id} value={typeOpt.id}>
+                  {typeOpt.label}
+                </option>
+              ))}
+            </select>
+          </label>
         </section>
 
         <section className="glass-card dark:glass-card-dark rounded-xl p-6">
@@ -314,32 +301,26 @@ export default function Feedback() {
         <div className="flex flex-wrap gap-3 pt-4">
           <button 
             type="submit" 
-            disabled={loading || uploadingScreenshots || !message.trim() || message.trim().length < 10} 
+            disabled={loading || !user || !message.trim() || message.trim().length < 10} 
             className="px-6 py-2.5 rounded-lg glass-button text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-all"
           >
-            {loading || uploadingScreenshots ? (
+            {loading ? (
               <span className="flex items-center gap-2">
                 <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
-                {uploadingScreenshots ? 'Uploading images...' : 'Submitting...'}
+                Submitting...
               </span>
             ) : (
               t('submitFeedback')
             )}
           </button>
           <a 
-            href="mailto:support@aicropcare.com" 
+            href={`mailto:${SUPPORT_EMAIL}`} 
             className="px-6 py-2.5 rounded-lg glass-input text-slate-900 dark:text-slate-100 font-medium hover:bg-white/40 backdrop-blur-sm transition-all"
           >
             {t('contactDeveloper')}
           </a>
         </div>
         
-        {!user && (
-          <div className="p-3 rounded-lg bg-amber-500/30 backdrop-blur-sm border border-amber-400/50 text-amber-800 dark:text-amber-200 text-sm">
-            <p className="font-medium">Note:</p>
-            <p>You can submit feedback without signing in. However, signing in helps us follow up with you if needed.</p>
-          </div>
-        )}
       </form>
     </div>
   )

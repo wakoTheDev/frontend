@@ -1,13 +1,9 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { createUserWithEmailAndPassword, signInWithPopup, GoogleAuthProvider, OAuthProvider, signOut, updateProfile } from 'firebase/auth'
 import { Eye, EyeOff } from 'lucide-react'
-import { auth } from '../lib/firebase'
-import { setUserProfile } from '../lib/firestore'
+import { supabase } from '../lib/supabaseClient'
+import { getOAuthRedirectTo } from '../constants/routes'
 import logoImage from '../assets/logo.png'
-
-const googleProvider = new GoogleAuthProvider()
-const appleProvider = new OAuthProvider('apple.com')
 
 export default function SignUp() {
   const [fullName, setFullName] = useState('')
@@ -19,7 +15,6 @@ export default function SignUp() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [socialLoading, setSocialLoading] = useState(null)
-  const [success, setSuccess] = useState(false)
   const navigate = useNavigate()
 
   const handleSubmit = async (e) => {
@@ -42,29 +37,31 @@ export default function SignUp() {
     
     setLoading(true)
     try {
-      // Create user account
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password)
-      const user = userCredential.user
-      
-      // Update Firebase Auth display name
-      if (fullName.trim()) {
-        await updateProfile(user, {
-          displayName: fullName.trim()
-        })
-      }
-      
-      // Save full name and initial profile to Firestore
-      await setUserProfile(user.uid, {
-        fullName: fullName.trim(),
-        email: email,
-        accountType: 'Free',
-        createdAt: new Date().toISOString(),
+      if (!supabase) throw new Error('Supabase client not configured')
+
+      const { error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            full_name: fullName.trim(),
+          },
+          emailRedirectTo: `${window.location.origin}/signin`,
+        },
       })
-      
-      setSuccess(true)
-      setTimeout(() => {
-        navigate('/signin', { state: { message: 'Account created successfully. Please sign in to continue.' } })
-      }, 2000)
+
+      if (error) {
+        throw error
+      }
+
+      // Supabase sends verification email automatically (if enabled in dashboard)
+      navigate('/verify-email', {
+        replace: true,
+        state: {
+          email,
+          message: `We have sent you a verification email to ${email}. Please verify it and log in.`,
+        },
+      })
     } catch (err) {
       setError(err.message || 'Failed to create account')
       setLoading(false)
@@ -75,41 +72,15 @@ export default function SignUp() {
     setError('')
     setSocialLoading('google')
     try {
-      const result = await signInWithPopup(auth, googleProvider)
-      const user = result.user
-      
-      // Check if this is a new user by comparing creation and last sign-in timestamps
-      // For new users, these will be identical (or very close)
-      const creationTime = new Date(user.metadata.creationTime).getTime()
-      const lastSignInTime = new Date(user.metadata.lastSignInTime).getTime()
-      const timeDiff = Math.abs(lastSignInTime - creationTime)
-      
-      // If timestamps are within 5 seconds, it's likely a new user
-      if (timeDiff < 5000) {
-        // New user - save profile data to Firestore
-        try {
-          await setUserProfile(user.uid, {
-            fullName: user.displayName || user.email?.split('@')[0] || 'User',
-            email: user.email || '',
-            accountType: 'Free',
-            createdAt: new Date().toISOString(),
-            photoURL: user.photoURL || '',
-          })
-        } catch (profileErr) {
-          console.warn('Failed to save Google sign-up profile:', profileErr)
-        }
-        
-        // Sign them out and redirect to sign in with success message
-        await auth.signOut()
-        navigate('/signin', { 
-          state: { 
-            message: 'Account created successfully. Please sign in to continue.' 
-          } 
-        })
-      } else {
-        // Existing user - sign in directly
-        navigate('/')
-      }
+      if (!supabase) throw new Error('Supabase client not configured')
+      // Use Supabase OAuth for Google sign-up/sign-in
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: getOAuthRedirectTo(),
+        },
+      })
+      if (error) throw error
     } catch (err) {
       setError(err.message || 'Failed to sign in with Google')
       setSocialLoading(null)
@@ -120,75 +91,18 @@ export default function SignUp() {
     setError('')
     setSocialLoading('apple')
     try {
-      const result = await signInWithPopup(auth, appleProvider)
-      const user = result.user
-      
-      // Check if this is a new user by comparing creation and last sign-in timestamps
-      // For new users, these will be identical (or very close)
-      const creationTime = new Date(user.metadata.creationTime).getTime()
-      const lastSignInTime = new Date(user.metadata.lastSignInTime).getTime()
-      const timeDiff = Math.abs(lastSignInTime - creationTime)
-      
-      // If timestamps are within 5 seconds, it's likely a new user
-      if (timeDiff < 5000) {
-        // New user - save profile data to Firestore
-        try {
-          await setUserProfile(user.uid, {
-            fullName: user.displayName || user.email?.split('@')[0] || 'User',
-            email: user.email || '',
-            accountType: 'Free',
-            createdAt: new Date().toISOString(),
-            photoURL: user.photoURL || '',
-          })
-        } catch (profileErr) {
-          console.warn('Failed to save Apple sign-up profile:', profileErr)
-        }
-        
-        // Sign them out and redirect to sign in with success message
-        await auth.signOut()
-        navigate('/signin', { 
-          state: { 
-            message: 'Account created successfully. Please sign in to continue.' 
-          } 
-        })
-      } else {
-        // Existing user - sign in directly
-        navigate('/')
-      }
+      if (!supabase) throw new Error('Supabase client not configured')
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'apple',
+        options: {
+          redirectTo: getOAuthRedirectTo(),
+        },
+      })
+      if (error) throw error
     } catch (err) {
       setError(err.message || 'Failed to sign in with Apple')
       setSocialLoading(null)
     }
-  }
-
-  if (success) {
-    return (
-      <div className="min-h-screen flex items-center justify-center px-4 relative overflow-hidden" style={{
-        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 25%, #f093fb 50%, #4facfe 75%, #00f2fe 100%)',
-        backgroundSize: '400% 400%',
-        animation: 'gradient 15s ease infinite'
-      }}>
-        <style>{`
-          @keyframes gradient {
-            0% { background-position: 0% 50%; }
-            50% { background-position: 100% 50%; }
-            100% { background-position: 0% 50%; }
-          }
-        `}</style>
-        <div className="w-full max-w-md glass-modal rounded-2xl p-8 text-center">
-          <div className="mb-4">
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-emerald-100 mb-4">
-              <svg className="w-8 h-8 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-              </svg>
-            </div>
-          </div>
-          <h2 className="text-2xl font-bold text-white mb-2 drop-shadow-sm">Account Created Successfully</h2>
-          <p className="text-white mb-4 drop-shadow-sm">Please sign in to continue.</p>
-          <p className="text-sm text-white/80 drop-shadow-sm">Redirecting to sign in page...</p>
-        </div>
-      </div>
-    )
   }
 
   return (
@@ -209,7 +123,7 @@ export default function SignUp() {
           <img 
             src={logoImage} 
             alt="AI-Powered CropCare Logo" 
-            className="w-12 h-12 object-contain"
+            className="w-12 h-12 object-cover object-center block"
             aria-hidden="true"
           />
           <h1 className="text-2xl font-bold text-white drop-shadow-sm">AI-Powered-CropCare</h1>

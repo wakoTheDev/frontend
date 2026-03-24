@@ -1,12 +1,10 @@
-import { useState, useEffect } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { confirmPasswordReset, verifyPasswordResetCode } from 'firebase/auth'
+import { useState, useEffect, useRef } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import { Eye, EyeOff } from 'lucide-react'
-import { auth } from '../lib/firebase'
+import { supabase } from '../lib/supabaseClient'
 import logoImage from '../assets/logo.png'
 
 export default function ResetPassword() {
-  const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -16,58 +14,119 @@ export default function ResetPassword() {
   const [loading, setLoading] = useState(false)
   const [verifying, setVerifying] = useState(true)
   const [validCode, setValidCode] = useState(false)
-  const [oobCode, setOobCode] = useState('')
+  const recoveryEstablished = useRef(false)
 
   useEffect(() => {
-    const code = searchParams.get('oobCode')
-    const mode = searchParams.get('mode')
-    
-    if (!code || mode !== 'resetPassword') {
-      setError('Invalid or expired reset link. Please request a new password reset.')
+    let cancelled = false
+    let subscription = null
+    let timeoutId = null
+
+    const finishFailure = (message) => {
+      if (cancelled) return
+      if (timeoutId) clearTimeout(timeoutId)
+      setError(message || 'Invalid or expired reset link. Please request a new password reset.')
+      setValidCode(false)
       setVerifying(false)
-      return
     }
 
-    setOobCode(code)
-    
-    // Verify the reset code is valid
-    verifyPasswordResetCode(auth, code)
-      .then((email) => {
-        setValidCode(true)
-        setVerifying(false)
+    const finishSuccess = () => {
+      if (cancelled) return
+      if (timeoutId) clearTimeout(timeoutId)
+      recoveryEstablished.current = true
+      setValidCode(true)
+      setError('')
+      setVerifying(false)
+    }
+
+    async function init() {
+      if (!supabase) {
+        finishFailure('Supabase is not configured. Check your environment variables.')
+        return
+      }
+
+      const url = new URL(window.location.href)
+      const code = url.searchParams.get('code')
+
+      // PKCE / email link with ?code=
+      if (code) {
+        const { error: exErr } = await supabase.auth.exchangeCodeForSession(code)
+        if (cancelled) return
+        if (exErr) {
+          finishFailure(exErr.message)
+          return
+        }
+        window.history.replaceState({}, document.title, `${url.origin}${url.pathname}`)
+        finishSuccess()
+        return
+      }
+
+      const { data: sub } = supabase.auth.onAuthStateChange((event) => {
+        if (event === 'PASSWORD_RECOVERY') {
+          finishSuccess()
+        }
       })
-      .catch((err) => {
-        setError(err.message || 'Invalid or expired reset link. Please request a new password reset.')
-        setValidCode(false)
-        setVerifying(false)
-      })
-  }, [searchParams])
+      subscription = sub?.subscription ?? null
+
+      // Implicit flow: tokens in hash — give the client a tick to parse
+      await new Promise((r) => setTimeout(r, 50))
+      if (cancelled) return
+
+      const { data: { session } } = await supabase.auth.getSession()
+      const hash = window.location.hash || ''
+      if (session && (hash.includes('type=recovery') || hash.includes('type%3Drecovery'))) {
+        finishSuccess()
+        return
+      }
+
+      // If still verifying, wait for PASSWORD_RECOVERY or timeout
+      timeoutId = window.setTimeout(() => {
+        if (cancelled || recoveryEstablished.current) return
+        finishFailure(null)
+      }, 4000)
+    }
+
+    init()
+
+    return () => {
+      cancelled = true
+      if (timeoutId) clearTimeout(timeoutId)
+      subscription?.unsubscribe()
+    }
+  }, [])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
-    
+
     if (password !== confirmPassword) {
       setError('Passwords do not match')
       return
     }
-    
+
     if (password.length < 6) {
       setError('Password must be at least 6 characters')
       return
     }
-    
+
+    if (!supabase) {
+      setError('Supabase is not configured.')
+      return
+    }
+
     setLoading(true)
     try {
-      await confirmPasswordReset(auth, oobCode, password)
-      // Success - redirect to sign in with success message
-      navigate('/signin', { 
-        state: { 
-          message: 'Password reset successfully! Please sign in with your new password.' 
-        } 
+      const { error: updateErr } = await supabase.auth.updateUser({ password })
+      if (updateErr) {
+        throw updateErr
+      }
+      navigate('/signin', {
+        state: {
+          message: 'Password reset successfully! Please sign in with your new password.',
+        },
       })
     } catch (err) {
       setError(err.message || 'Failed to reset password. The link may have expired.')
+    } finally {
       setLoading(false)
     }
   }
@@ -113,7 +172,7 @@ export default function ResetPassword() {
             <img 
               src={logoImage} 
               alt="AI-Powered CropCare Logo" 
-              className="w-12 h-12 object-contain"
+              className="w-12 h-12 object-cover object-center block"
               aria-hidden="true"
             />
             <h1 className="text-2xl font-bold text-white drop-shadow-sm">AI-Powered-CropCare</h1>
@@ -158,7 +217,7 @@ export default function ResetPassword() {
           <img 
             src={logoImage} 
             alt="AI-Powered CropCare Logo" 
-            className="w-12 h-12 object-contain"
+            className="w-12 h-12 object-cover object-center block"
             aria-hidden="true"
           />
           <h1 className="text-2xl font-bold text-white drop-shadow-sm">AI-Powered-CropCare</h1>

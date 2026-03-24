@@ -8,6 +8,7 @@ import LogoutModal from './LogoutModal'
 import DeleteAccountModal from './DeleteAccountModal'
 import DataManagementSidebar from './DataManagementSidebar'
 import logoImage from '../assets/logo.png'
+import { DASHBOARD_BASE, dashboardPath } from '../constants/routes'
 
 const SIDEBAR_WIDTH_EXPANDED = 256  // w-64
 const SIDEBAR_WIDTH_COLLAPSED = 72
@@ -22,14 +23,15 @@ export default function Sidebar() {
   const [deleteAccountOpen, setDeleteAccountOpen] = useState(false)
 
   const menuItems = useMemo(() => [
-    { to: '/', icon: '🏠', labelKey: 'home' },
-    { to: '/about', icon: 'ℹ️', labelKey: 'about' },
-    { to: '/help', icon: '❓', labelKey: 'help' },
-    { to: '/feedback', icon: '💬', labelKey: 'feedback' },
-    { to: '/profile', icon: '👤', labelKey: 'profile' },
-    { to: '/settings', icon: '⚙️', labelKey: 'settings' },
-    { to: '/statistics', icon: '📊', labelKey: 'statistics' },
-    { to: '/history', icon: '📥', labelKey: 'history' },
+    { to: dashboardPath(), icon: '🏠', labelKey: 'home' },
+    { to: dashboardPath('about'), icon: 'ℹ️', labelKey: 'about' },
+    { to: dashboardPath('help'), icon: '❓', labelKey: 'help' },
+    { to: dashboardPath('feedback'), icon: '💬', labelKey: 'feedback' },
+    { to: dashboardPath('admin-feedback'), icon: '🛡️', labelKey: 'adminFeedback' },
+    { to: dashboardPath('profile'), icon: '👤', labelKey: 'profile' },
+    { to: dashboardPath('settings'), icon: '⚙️', labelKey: 'settings' },
+    { to: dashboardPath('statistics'), icon: '📊', labelKey: 'statistics' },
+    { to: dashboardPath('history'), icon: '📥', labelKey: 'history' },
   ], [])
 
   const onPrefetchProfile = () => user?.uid && prefetchProfile(user.uid)
@@ -70,7 +72,7 @@ export default function Sidebar() {
           <img 
             src={logoImage} 
             alt="AI-Powered CropCare Logo" 
-            className={`shrink-0 object-contain ${collapsed ? 'w-9 h-9' : 'w-10 h-10'}`}
+            className={`shrink-0 block object-cover object-center ${collapsed ? 'w-9 h-9' : 'w-10 h-10'}`}
             aria-hidden="true"
           />
           {!collapsed && <span className="font-semibold text-lg truncate min-w-0">AI-Powered-CropCare</span>}
@@ -93,10 +95,10 @@ export default function Sidebar() {
             <NavLink
               key={to}
               to={to}
-              end={to === '/'}
+              end={to === DASHBOARD_BASE}
               title={collapsed ? t(labelKey) : undefined}
-              onMouseEnter={to === '/profile' ? onPrefetchProfile : (to === '/history' || to === '/statistics') ? onPrefetchHistory : undefined}
-              onFocus={to === '/profile' ? onPrefetchProfile : (to === '/history' || to === '/statistics') ? onPrefetchHistory : undefined}
+              onMouseEnter={to === dashboardPath('profile') ? onPrefetchProfile : (to === dashboardPath('history') || to === dashboardPath('statistics')) ? onPrefetchHistory : undefined}
+              onFocus={to === dashboardPath('profile') ? onPrefetchProfile : (to === dashboardPath('history') || to === dashboardPath('statistics')) ? onPrefetchHistory : undefined}
               className={({ isActive }) =>
                 `flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all min-h-[44px] ${
                   isActive ? 'bg-white/20 text-white backdrop-blur-sm' : 'text-white hover:bg-white/10'

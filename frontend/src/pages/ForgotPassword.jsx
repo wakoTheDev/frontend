@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { sendPasswordResetEmail } from 'firebase/auth'
-import { auth } from '../lib/firebase'
+import { supabase } from '../lib/supabaseClient'
 import logoImage from '../assets/logo.png'
 
 export default function ForgotPassword() {
@@ -16,27 +15,19 @@ export default function ForgotPassword() {
     setMessage('')
     setLoading(true)
     try {
-      // Configure action code settings with redirect URL
-      const actionCodeSettings = {
-        url: `${window.location.origin}/reset-password`,
-        handleCodeInApp: false, // Open link in browser, not app
+      if (!supabase) throw new Error('Supabase client not configured')
+
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      })
+
+      if (error) {
+        throw error
       }
-      
-      await sendPasswordResetEmail(auth, email, actionCodeSettings)
-      setMessage('Check your email for a link to reset your password. The link will expire in 1 hour.')
+
+      setMessage('Check your email for a link to reset your password.')
     } catch (err) {
-      // Provide user-friendly error messages
-      let errorMessage = 'Failed to send reset email'
-      if (err.code === 'auth/user-not-found') {
-        errorMessage = 'No account found with this email address.'
-      } else if (err.code === 'auth/invalid-email') {
-        errorMessage = 'Invalid email address.'
-      } else if (err.code === 'auth/too-many-requests') {
-        errorMessage = 'Too many requests. Please try again later.'
-      } else if (err.message) {
-        errorMessage = err.message
-      }
-      setError(errorMessage)
+      setError(err.message || 'Failed to send reset email')
     } finally {
       setLoading(false)
     }
@@ -60,7 +51,7 @@ export default function ForgotPassword() {
           <img 
             src={logoImage} 
             alt="AI-Powered CropCare Logo" 
-            className="w-12 h-12 object-contain"
+            className="w-12 h-12 object-cover object-center block"
             aria-hidden="true"
           />
           <h1 className="text-2xl font-bold text-white drop-shadow-sm">AI-Powered-CropCare</h1>

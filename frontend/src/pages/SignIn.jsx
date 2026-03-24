@@ -1,13 +1,10 @@
 import { useState } from 'react'
 import { Link, useNavigate, useLocation, Navigate } from 'react-router-dom'
-import { signInWithEmailAndPassword, signInWithPopup, GoogleAuthProvider, OAuthProvider } from 'firebase/auth'
 import { Eye, EyeOff } from 'lucide-react'
-import { auth } from '../lib/firebase'
+import { supabase } from '../lib/supabaseClient'
 import { useAuth } from '../contexts/AuthContext'
+import { getOAuthRedirectTo } from '../constants/routes'
 import logoImage from '../assets/logo.png'
-
-const googleProvider = new GoogleAuthProvider()
-const appleProvider = new OAuthProvider('apple.com')
 
 export default function SignIn() {
   const { user, loading: authLoading } = useAuth()
@@ -19,7 +16,7 @@ export default function SignIn() {
   const [socialLoading, setSocialLoading] = useState(null)
   const navigate = useNavigate()
   const location = useLocation()
-  const from = location.state?.from?.pathname || '/'
+  const from = location.state?.from?.pathname || '/dashboard'
   const successMessage = location.state?.message
 
   if (authLoading) {
@@ -41,8 +38,34 @@ export default function SignIn() {
     setError('')
     setLoading(true)
     try {
-      await signInWithEmailAndPassword(auth, email, password)
-      navigate(from, { replace: true })
+      if (!supabase) throw new Error('Supabase client not configured')
+
+      const { data, error: signInError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      })
+
+      if (signInError) {
+        throw signInError
+      }
+
+      const u = data.user
+
+      // If email confirmation is required, check email_confirmed_at
+      if (!u?.email_confirmed_at) {
+        // Supabase will have already sent confirmation email at sign-up.
+        // Guide user to verification screen.
+        await supabase.auth.signOut()
+        navigate('/verify-email', {
+          replace: true,
+          state: {
+            email: u?.email,
+            message: `We have sent you a verification email to ${u?.email}. Please verify it and log in.`,
+          },
+        })
+      } else {
+        navigate(from, { replace: true })
+      }
     } catch (err) {
       setError(err.message || 'Failed to sign in')
     } finally {
@@ -54,8 +77,17 @@ export default function SignIn() {
     setError('')
     setSocialLoading('google')
     try {
-      await signInWithPopup(auth, googleProvider)
-      navigate(from, { replace: true })
+      if (!supabase) throw new Error('Supabase client not configured')
+      // redirectTo must match a URL listed in Supabase → Auth → URL Configuration → Redirect URLs
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: getOAuthRedirectTo(),
+        },
+      })
+      if (error) throw error
+      // Success: Supabase redirects the browser to Google; do not navigate() here — it races
+      // with that redirect and can land on the dashboard without a session.
     } catch (err) {
       setError(err.message || 'Failed to sign in with Google')
       setSocialLoading(null)
@@ -66,8 +98,14 @@ export default function SignIn() {
     setError('')
     setSocialLoading('apple')
     try {
-      await signInWithPopup(auth, appleProvider)
-      navigate(from, { replace: true })
+      if (!supabase) throw new Error('Supabase client not configured')
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'apple',
+        options: {
+          redirectTo: getOAuthRedirectTo(),
+        },
+      })
+      if (error) throw error
     } catch (err) {
       setError(err.message || 'Failed to sign in with Apple')
       setSocialLoading(null)
@@ -92,7 +130,7 @@ export default function SignIn() {
           <img 
             src={logoImage} 
             alt="AI-Powered CropCare Logo" 
-            className="w-12 h-12 object-contain"
+            className="w-12 h-12 object-cover object-center block"
             aria-hidden="true"
           />
           <h1 className="text-2xl font-bold text-white drop-shadow-sm">AI-Powered-CropCare</h1>

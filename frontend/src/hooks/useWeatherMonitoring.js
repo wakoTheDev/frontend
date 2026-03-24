@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { getCurrentWeather, shouldSendWeatherAlert } from '../lib/weather'
 import { sendWeatherAlert } from '../lib/notifications'
-import { getUserProfile } from '../lib/firestore'
+import { getUserProfile } from '../lib/supabase'
 
 /**
  * Hook to monitor weather and send alerts based on user location

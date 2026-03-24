@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Trash2, Download, RefreshCw } from 'lucide-react'
 import { useTranslation } from '../contexts/AppSettingsContext'
+import { dashboardPath } from '../constants/routes'
 
 const SETTINGS_KEY = 'cropcare-app-settings'
 
@@ -33,7 +34,7 @@ export default function DataManagementSidebar({ collapsed }) {
   }
 
   const handleBackupExport = () => {
-    navigate('/history#export')
+    navigate(`${dashboardPath('history')}#export`)
   }
 
   const handleSyncChange = (value) => {

@@ -2,10 +2,11 @@ import { useEffect, useState, useRef, memo } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { usePrefetch } from '../contexts/PrefetchContext'
 import { useTranslation } from '../contexts/AppSettingsContext'
-import { getAnalysisHistory } from '../lib/firestore'
+import { getAnalysisHistory } from '../lib/analysisStore'
 import { exportAnalyses, getSummaryStats } from '../lib/exportHelpers'
 import DataVisualization from '../components/DataVisualization'
 import { useDelayedLoading } from '../hooks/useDelayedLoading'
+import { formatTimestamp } from '../lib/formatDate'
 
 function HistoryPage() {
   const t = useTranslation()
@@ -156,7 +157,7 @@ function HistoryPage() {
           <ul className="space-y-4">
             {history.slice(0, 15).map((item, i) => (
               <li key={item.id || i} className="glass-card dark:glass-card-dark rounded-xl p-4">
-                <p className="text-sm text-slate-500 dark:text-slate-400">{item.timestamp ? new Date(item.timestamp).toLocaleString() : '—'}</p>
+                <p className="text-sm text-slate-500 dark:text-slate-400">{formatTimestamp(item.timestamp)}</p>
                 <p className="mt-1 text-slate-700 dark:text-slate-300">Accuracy: {item.accuracyRate}% · Recovery: {item.recoveryRate}% · Time: {item.timeTaken}s</p>
                 {item.recommendations && <p className="mt-2 text-slate-600 dark:text-slate-400 text-sm line-clamp-2">{item.recommendations}</p>}
               </li>

@@ -2,8 +2,8 @@ import { useEffect, useState, useRef, memo } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { usePrefetch } from '../contexts/PrefetchContext'
 import { useTranslation } from '../contexts/AppSettingsContext'
-import { getAnalysisHistory } from '../lib/firestore'
-import { exportAnalyses } from '../lib/exportHelpers'
+import { getAnalysisHistory } from '../lib/analysisStore'
+import { exportAnalyses, exportStatisticsReport } from '../lib/exportHelpers'
 import DataVisualization from '../components/DataVisualization'
 import { useDelayedLoading } from '../hooks/useDelayedLoading'
 import { Download, RefreshCw } from 'lucide-react'
@@ -77,10 +77,16 @@ function StatisticsPage() {
     setExporting(true)
     setExportMessage('')
     try {
-      await exportAnalyses(history, {
-        format: exportFormat,
-        includeImages,
-      })
+      if (exportFormat === 'pdf') {
+        // For PDF, export a statistics-focused report that mirrors the charts/visualizations.
+        await exportStatisticsReport(history, { includeImages })
+      } else {
+        // Other formats (CSV/JSON/Excel) export raw analysis data.
+        await exportAnalyses(history, {
+          format: exportFormat,
+          includeImages,
+        })
+      }
       setExportMessage(t('exportCompleteDownload'))
       setTimeout(() => setExportMessage(''), 5000)
     } catch (err) {

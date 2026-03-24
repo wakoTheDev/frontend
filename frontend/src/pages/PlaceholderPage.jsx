@@ -1,12 +1,13 @@
 import { useLocation } from 'react-router-dom'
+import { dashboardPath } from '../constants/routes'
 
 const titles = {
-  '/about': 'About',
-  '/help': 'Help',
-  '/feedback': 'Feedback',
-  '/profile': 'Profile',
-  '/settings': 'Settings',
-  '/history': 'Download All Analysis History',
+  [dashboardPath('about')]: 'About',
+  [dashboardPath('help')]: 'Help',
+  [dashboardPath('feedback')]: 'Feedback',
+  [dashboardPath('profile')]: 'Profile',
+  [dashboardPath('settings')]: 'Settings',
+  [dashboardPath('history')]: 'Download All Analysis History',
 }
 
 export default function PlaceholderPage() {

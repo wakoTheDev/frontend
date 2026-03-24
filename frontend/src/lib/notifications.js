@@ -114,15 +114,22 @@ export async function notifyAnalysisComplete(userEmail, analysisResult) {
     return
   }
 
-  const { accuracyRate, recoveryRate, recommendations } = analysisResult
-  const hasIssue = accuracyRate < 85 || recoveryRate < 80
-  const title = hasIssue 
+  const { accuracyRate, recoveryRate, recommendations } = analysisResult || {}
+
+  const acc = typeof accuracyRate === 'number' ? accuracyRate : null
+  const rec = typeof recoveryRate === 'number' ? recoveryRate : null
+
+  const accText = acc != null ? `${acc}%` : 'N/A'
+  const recText = rec != null ? `${rec}%` : 'N/A'
+
+  const hasIssue = (acc != null && acc < 85) || (rec != null && rec < 80)
+  const title = hasIssue
     ? '⚠️ Crop Analysis Complete - Action Required'
     : '✅ Crop Analysis Complete'
   
   const message = hasIssue
-    ? `Analysis detected potential issues. Accuracy: ${accuracyRate}%, Recovery: ${recoveryRate}%`
-    : `Analysis complete! Accuracy: ${accuracyRate}%, Recovery: ${recoveryRate}%`
+    ? `Analysis detected potential issues. Accuracy: ${accText}, Recovery: ${recText}`
+    : `Analysis complete! Accuracy: ${accText}, Recovery: ${recText}`
 
   // Show push notification
   await showPushNotification(title, {
@@ -137,8 +144,8 @@ export async function notifyAnalysisComplete(userEmail, analysisResult) {
 Your crop analysis has been completed.
 
 Results:
-- Accuracy Rate: ${accuracyRate}%
-- Recovery Rate: ${recoveryRate}%
+- Accuracy Rate: ${accText}
+- Recovery Rate: ${recText}
 
 ${hasIssue ? '⚠️ Action Required: ' : ''}${recommendations || 'No specific recommendations.'}
 
@@ -196,7 +203,7 @@ Stay updated with real-time weather alerts in your dashboard.
     )
   }
 
-  // Store weather alert in Firebase if userId provided
+  // Store weather alert in Supabase if userId provided
   if (userId) {
     try {
       const { storeWeatherAlert } = await import('./weather')

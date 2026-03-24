@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAppSettings, useTranslation } from '../contexts/AppSettingsContext'
-import { getUserProfile, setUserProfile } from '../lib/firestore'
+import { getUserProfile, setUserProfile } from '../lib/supabase'
 import Toggle from '../components/Toggle'
 import { requestNotificationPermission } from '../lib/notifications'
 
@@ -58,11 +58,18 @@ export default function Settings() {
     if (!user?.uid) return
     getUserProfile(user.uid).then((profileData) => {
       setProfile(profileData)
-      // Load notification preferences from Firebase if available
+      // Load notification preferences from cloud if available
       if (profileData?.notificationPreferences) {
         setLocal((prev) => ({
           ...prev,
           ...profileData.notificationPreferences,
+        }))
+      }
+      // Load app-level settings from cloud if available (language, units, etc.)
+      if (profileData?.appSettings && typeof profileData.appSettings === 'object') {
+        setLocal((prev) => ({
+          ...prev,
+          ...profileData.appSettings,
         }))
       }
       // Check location status
@@ -89,7 +96,7 @@ export default function Settings() {
     setLocal((prev) => ({ ...prev, [key]: value }))
     setSaveStatus(null)
     
-    // If it's a notification preference, save to Firebase immediately
+    // If it's a notification preference, save to Supabase immediately
     const notificationKeys = ['pushNotifications', 'emailAlerts', 'analysisAlerts', 'weatherAlerts', 'marketingComms']
     if (notificationKeys.includes(key) && user?.uid) {
       try {
@@ -122,7 +129,7 @@ export default function Settings() {
     setSaveStatus('saved')
     setSaving(false)
     try {
-      // Save all notification preferences to Firebase
+      // Save all settings/preferences to Supabase profile so they roam across devices
       await setUserProfile(user.uid, {
         emailPreferences: !!mergedLocal.emailAlerts,
         notificationPreferences: {
@@ -131,6 +138,16 @@ export default function Settings() {
           analysisAlerts: mergedLocal.analysisAlerts,
           weatherAlerts: mergedLocal.weatherAlerts,
           marketingComms: mergedLocal.marketingComms,
+        },
+        appSettings: {
+          language: mergedLocal.language,
+          units: mergedLocal.units,
+          fontSize: mergedLocal.fontSize,
+          offlineMode: mergedLocal.offlineMode,
+          imageQuality: mergedLocal.imageQuality,
+          autoSaveResults: mergedLocal.autoSaveResults,
+          shareAnonymousData: mergedLocal.shareAnonymousData,
+          syncFrequency: mergedLocal.syncFrequency,
         },
       })
     } catch (err) {

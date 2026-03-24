@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { useTranslation } from '../contexts/AppSettingsContext'
-import { setUserProfile, getUserProfile } from '../lib/firestore'
+import { setUserProfile, getUserProfile } from '../lib/supabase'
 import { X, Camera, BarChart3, Lightbulb, Bell, Cloud, ChevronRight, ChevronLeft } from 'lucide-react'
 
 const GUIDE_STEPS = [

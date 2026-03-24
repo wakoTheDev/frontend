@@ -1,3 +1,5 @@
+import { supabase } from './supabaseClient'
+
 // Base URL for backend API.
 // In development we proxy `/api` to http://localhost:3001 via Vite.
 // In production (e.g. Vercel), set VITE_API_BASE_URL to your backend URL, e.g. https://your-backend.example.com/api
@@ -87,7 +89,8 @@ async function request(path, options = {}) {
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
-    throw new Error(err.message || res.statusText || 'Request failed')
+    const msg = err.message || err.error || err.detail || res.statusText || 'Request failed'
+    throw new Error(msg)
   }
   return res.json()
 }
@@ -113,5 +116,32 @@ export async function getInsights(analysisSummary) {
   return request('/insights', {
     method: 'POST',
     body: JSON.stringify({ analysisSummary }),
+  })
+}
+
+// General chat endpoint for the in-app assistant
+export async function requestChat(question, context = {}, history = []) {
+  return request('/chat', {
+    method: 'POST',
+    body: JSON.stringify({ question, context, history }),
+  })
+}
+
+// Send feedback to backend so it can email the system owners
+export async function sendFeedback(payload) {
+  return request('/feedback', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+// Allow admins to reply to a feedback submission via email (optional feature).
+export async function replyToFeedback(payload) {
+  const session = await supabase?.auth?.getSession?.().catch(() => null)
+  const token = session?.data?.session?.access_token
+  return request('/feedback/reply', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
   })
 }

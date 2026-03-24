@@ -2,6 +2,8 @@ import { Link } from 'react-router-dom'
 import { useTranslation } from '../contexts/AppSettingsContext'
 
 import { memo } from 'react'
+import { dashboardPath } from '../constants/routes'
+import { SUPPORT_EMAIL } from '../constants/support'
 
 function MainFooter() {
   const t = useTranslation()
@@ -14,23 +16,29 @@ function MainFooter() {
             <p className="text-sm text-slate-400 mb-2">{t('footerCompany')}</p>
             <p className="text-sm text-slate-400 mb-3">{t('footerMission')}</p>
             <div className="flex flex-wrap gap-x-2 gap-y-1 text-sm">
-              <Link to="/terms" className="text-emerald-400 hover:text-emerald-300">{t('termsOfService')}</Link>
+              <Link to={dashboardPath('terms')} className="text-emerald-400 hover:text-emerald-300">
+                {t('termsOfService')}
+              </Link>
               <span className="text-slate-500">|</span>
-              <Link to="/privacy" className="text-emerald-400 hover:text-emerald-300">{t('privacyPolicy')}</Link>
+              <Link to={dashboardPath('privacy')} className="text-emerald-400 hover:text-emerald-300">
+                {t('privacyPolicy')}
+              </Link>
               <span className="text-slate-500">|</span>
-              <a href="#" className="text-emerald-400 hover:text-emerald-300">{t('cookiePolicy')}</a>
+              <Link to={`${dashboardPath('privacy')}#cookies`} className="text-emerald-400 hover:text-emerald-300">
+                {t('cookiePolicy')}
+              </Link>
             </div>
           </div>
 
           <div>
             <h3 className="text-white font-semibold mb-3">{t('contactUs')}</h3>
             <ul className="space-y-1 text-sm text-slate-400">
-              <li>Email: <a href="mailto:support@aicropcare.com" className="text-emerald-400 hover:text-emerald-300">support@aicropcare.com</a></li>
+              <li>Email: <a href={`mailto:${SUPPORT_EMAIL}`} className="text-emerald-400 hover:text-emerald-300">{SUPPORT_EMAIL}</a></li>
               <li>Phone: +254 115-199-770</li>
               <li>Support: Mon–Sat, 9AM–6PM EST</li>
               <li>Business: <a href="mailto:partnerships@aicropcare.com" className="text-emerald-400 hover:text-emerald-300">partnerships@aicropcare.com</a></li>
             </ul>
-            <Link to="/feedback" className="inline-block mt-2 text-sm text-emerald-400 hover:text-emerald-300 hover:underline">
+            <Link to={dashboardPath('feedback')} className="inline-block mt-2 text-sm text-emerald-400 hover:text-emerald-300 hover:underline">
               {t('contactForm')}
             </Link>
           </div>
@@ -44,7 +52,7 @@ function MainFooter() {
               <a href="#" className="text-emerald-400 hover:text-emerald-300 transition-colors" aria-label="Instagram">Instagram</a>
             </div>
             <div className="mb-3">
-              <Link to="/accessibility" className="text-sm text-emerald-400 hover:text-emerald-300 hover:underline">
+              <Link to={dashboardPath('accessibility')} className="text-sm text-emerald-400 hover:text-emerald-300 hover:underline">
                 {t('accessibilityStatement')}
               </Link>
             </div>

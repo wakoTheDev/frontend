@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect } from 'react'
+import { useLocation } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { useTranslation } from '../contexts/AppSettingsContext'
 import { analyzeCropImage, getRecommendations, getInsights, setOfflineAnalysisCache } from '../lib/api'
-import { saveAnalysis, getAnalysisHistory } from '../lib/firestore'
+import { saveAnalysis, getAnalysisHistory } from '../lib/analysisStore'
 import { exportAnalysisPDF } from '../lib/pdfExport'
 import { useWeatherMonitoring } from '../hooks/useWeatherMonitoring'
 import { notifyAnalysisComplete } from '../lib/notifications'
@@ -15,6 +16,7 @@ import DemoTestButton from '../components/DemoTestButton'
 import LocationWarningBanner from '../components/LocationWarningBanner'
 import unhealthyCropLeavesImage from '../assets/unhealthy-crop-leaves.png'
 import CameraCaptureModal from '../components/CameraCaptureModal'
+import ChatbotWidget from '../components/ChatbotWidget'
 
 const defaultResult = {
   timeTaken: null,
@@ -41,6 +43,7 @@ function loadLocalSettings() {
 export default function Dashboard() {
   const { user, updateActivity } = useAuth()
   const t = useTranslation()
+  const location = useLocation()
   const [imageFile, setImageFile] = useState(null)
   const [imagePreview, setImagePreview] = useState(null)
   const [result, setResult] = useState(defaultResult)
@@ -50,6 +53,7 @@ export default function Dashboard() {
   const [isDemo, setIsDemo] = useState(false)
   const [showCameraModal, setShowCameraModal] = useState(false)
   const fileInputRef = useRef(null)
+  const scanSectionRef = useRef(null)
   
   // Weather monitoring - check if weather alerts are enabled (reactive to settings changes)
   const [weatherAlertsEnabled, setWeatherAlertsEnabled] = useState(() => {
@@ -78,6 +82,20 @@ export default function Dashboard() {
   }, [])
   
   useWeatherMonitoring(user?.uid, user?.email, weatherAlertsEnabled)
+
+  // If the user clicks "Scan Now", we navigate to `/dashboard#scan`.
+  // This effect scrolls the upload/take-picture section into view.
+  useEffect(() => {
+    const shouldScroll =
+      location.hash === '#scan' || location.state?.scrollToScan
+    if (!shouldScroll) return
+
+    const timeoutId = window.setTimeout(() => {
+      scanSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, 0)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [location.hash, location.key])
 
   const loadHistory = async () => {
     if (!user?.uid) return
@@ -224,7 +242,7 @@ export default function Dashboard() {
         insights: String(insights),
         imageUrl: imageUrl, // Temporary preview URL
         timestamp: new Date().toISOString(),
-        imageFile: demoFile, // Always include imageFile so it gets uploaded to Firebase Storage
+        imageFile: demoFile, // Always include imageFile so it gets uploaded to Supabase Storage
       }
       
       setOfflineAnalysisCache(record)
@@ -268,39 +286,90 @@ export default function Dashboard() {
     setError(null)
     try {
       const analysis = await analyzeCropImage(imageFile)
+      // Log raw analysis payload coming back from the backend/model
+      console.log('Raw analysis result from model/backend:', analysis)
       const isOfflineResult = !!analysis.offline
 
-      let timeTaken = analysis.timeTaken ?? analysis.time_taken ?? 5.2
-      let accuracyRate = analysis.accuracyRate ?? analysis.accuracy_rate ?? 98
-      let recoveryRate = analysis.recoveryRate ?? analysis.recovery_rate ?? 92
+      let timeTaken = analysis.timeTaken ?? analysis.time_taken ?? null
+      let accuracyRate = analysis.accuracyRate ?? analysis.accuracy_rate ?? null
+      let recoveryRate = analysis.recoveryRate ?? analysis.recovery_rate ?? null
       const cropType = analysis.cropType ?? analysis.crop_type ?? analysis.leafType ?? analysis.leaf_type ?? null
-      let recommendations = analysis.recommendations ?? null
-      let insights = analysis.insights ?? null
 
-      if (!isOfflineResult) {
-        const needsRecommendations = !recommendations
-        const needsInsights = !insights
-        if (needsRecommendations || needsInsights) {
-          const summary = { timeTaken, accuracyRate, recoveryRate, cropType }
+      const normalizedCropType =
+        cropType && String(cropType).trim() ? String(cropType).trim() : null
+
+      // If the model could not recognize any crop/leaf type, treat it as a non-plant image.
+      if (!normalizedCropType && !isOfflineResult) {
+        setLoading(false)
+        setError(
+          'The uploaded image does not appear to be a plant or recognizable crop leaf. Please upload a clear photo of the affected crop.'
+        )
+        if (fileInputRef.current) {
+          try {
+            fileInputRef.current.value = ''
+          } catch {}
+        }
+        return
+      }
+
+      // Always generate recommendations and insights from OpenRouter when online.
+      // When offline, fall back to whatever came from the analysis or simple defaults.
+      let recommendations = null
+      let insights = null
+
+      if (isOfflineResult) {
+        recommendations = analysis.recommendations ?? 'No recommendations.'
+        insights = analysis.insights ?? 'No insights.'
+      } else {
+        const analysisSummary = {
+          timeTaken: typeof timeTaken === 'number' ? timeTaken : (timeTaken != null ? parseFloat(String(timeTaken)) : null),
+          accuracyRate: typeof accuracyRate === 'number' ? accuracyRate : (accuracyRate != null ? parseInt(String(accuracyRate), 10) : null),
+          recoveryRate: typeof recoveryRate === 'number' ? recoveryRate : (recoveryRate != null ? parseInt(String(recoveryRate), 10) : null),
+          cropType: normalizedCropType,
+          imageDescription: 'Crop leaf image captured by the user for health analysis.',
+        }
+
+        try {
           const [recRes, insRes] = await Promise.all([
-            needsRecommendations ? getRecommendations(summary).catch(() => ({ recommendations: null })) : Promise.resolve({ recommendations }),
-            needsInsights ? getInsights(summary).catch(() => ({ insights: null })) : Promise.resolve({ insights }),
+            getRecommendations(analysisSummary).catch((err) => {
+              console.warn('Recommendations API error:', err)
+              return { recommendations: null }
+            }),
+            getInsights(analysisSummary).catch((err) => {
+              console.warn('Insights API error:', err)
+              return { insights: null }
+            }),
           ])
-          if (needsRecommendations) recommendations = recRes.recommendations ?? recRes.text ?? 'No recommendations generated.'
-          if (needsInsights) insights = insRes.insights ?? insRes.text ?? 'No insights generated.'
+
+          recommendations = recRes.recommendations ?? recRes.text ?? null
+          insights = insRes.insights ?? insRes.text ?? null
+
+          // If OpenRouter provided a numeric recoveryRate, prefer it.
+          if (typeof insRes?.recoveryRate === 'number') {
+            recoveryRate = insRes.recoveryRate
+          }
+        } catch (apiErr) {
+          console.error('OpenRouter API error during live analysis:', apiErr)
+        }
+
+        if (!recommendations) {
+          recommendations = 'No recommendations.'
+        }
+        if (!insights) {
+          insights = 'No insights.'
         }
       }
 
       const record = {
-        timeTaken: typeof timeTaken === 'number' ? timeTaken : parseFloat(String(timeTaken)) || 5.2,
-        accuracyRate: typeof accuracyRate === 'number' ? accuracyRate : parseInt(String(accuracyRate), 10) || 98,
-        recoveryRate: typeof recoveryRate === 'number' ? recoveryRate : parseInt(String(recoveryRate), 10) || 92,
-        cropType: cropType && String(cropType).trim() ? String(cropType).trim() : null,
-        recommendations: recommendations ?? 'No recommendations.',
-        insights: insights ?? 'No insights.',
+        timeTaken: typeof timeTaken === 'number' ? timeTaken : (timeTaken != null ? parseFloat(String(timeTaken)) : null),
+        accuracyRate: typeof accuracyRate === 'number' ? accuracyRate : (accuracyRate != null ? parseInt(String(accuracyRate), 10) : null),
+        recoveryRate: typeof recoveryRate === 'number' ? recoveryRate : (recoveryRate != null ? parseInt(String(recoveryRate), 10) : null),
+        cropType: normalizedCropType,
+        recommendations,
+        insights,
         imageUrl: imagePreview || analysis.imageUrl || null, // Temporary preview URL
         timestamp: analysis.timestamp || new Date().toISOString(),
-        imageFile: imageFile, // Always include imageFile so it gets uploaded to Firebase Storage
+        imageFile: imageFile, // Always include imageFile so it gets uploaded to Supabase Storage
         offline: isOfflineResult,
       }
       setOfflineAnalysisCache(record)
@@ -377,17 +446,19 @@ export default function Dashboard() {
         {/* Vertical flow: image & scan section at top, metrics in the middle (inside PrimaryAnalysisFrame), 
            then expandable insights (SecondaryInsightsFrame) below */}
         <div className="space-y-6">
-          <PrimaryAnalysisFrame
-            imagePreview={imagePreview}
-            result={result}
-            loading={loading}
-            onLoadOrTake={handleCapture}
-            onCapture={handleOpenCamera}
-            onAnalyze={handleAnalyze}
-            fileInputRef={fileInputRef}
-            onFileChange={handleFileChange}
-            hasImage={!!imageFile}
-          />
+          <div id="scan" ref={scanSectionRef}>
+            <PrimaryAnalysisFrame
+              imagePreview={imagePreview}
+              result={result}
+              loading={loading}
+              onLoadOrTake={handleCapture}
+              onCapture={handleOpenCamera}
+              onAnalyze={handleAnalyze}
+              fileInputRef={fileInputRef}
+              onFileChange={handleFileChange}
+              hasImage={!!imageFile}
+            />
+          </div>
           <SecondaryInsightsFrame
             recommendations={result.recommendations}
             insights={result.insights}
@@ -404,6 +475,8 @@ export default function Dashboard() {
         onClose={() => setShowCameraModal(false)}
         onCapture={handleCameraCaptured}
       />
+      {/* Floating AI assistant chat in bottom-right of the dashboard */}
+      <ChatbotWidget />
     </div>
   )
 }

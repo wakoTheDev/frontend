@@ -2,9 +2,9 @@ import { useState, useEffect } from 'react'
 import { MapPin, X } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useTranslation } from '../contexts/AppSettingsContext'
-import { getUserProfile } from '../lib/firestore'
+import { getUserProfile } from '../lib/supabase'
 import { requestLocationPermission } from '../lib/location'
-import { setUserProfile } from '../lib/firestore'
+import { setUserProfile } from '../lib/supabase'
 
 /**
  * Banner component that shows when weather alerts are enabled but location is denied

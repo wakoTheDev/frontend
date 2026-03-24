@@ -1,3 +1,41 @@
+/** Public support / developer contact (mailto, email footers). */
+export const DEFAULT_SUPPORT_EMAIL = 'aipoweredcropcare@zohomail.com'
+
+/** Support address shown to users and in templates. Override with SUPPORT_EMAIL in .env */
+export function getSupportEmail() {
+  return process.env.SUPPORT_EMAIL || DEFAULT_SUPPORT_EMAIL
+}
+
+/**
+ * From address for admin feedback replies (must match your SMTP account for deliverability).
+ * Defaults to the Zoho support mailbox. Override with FEEDBACK_REPLY_FROM.
+ */
+export function getFeedbackReplyFromEmail() {
+  // Prefer explicit reply-from, then EMAIL_FROM (must match a sender verified in Brevo/Gmail).
+  return process.env.FEEDBACK_REPLY_FROM || process.env.EMAIL_FROM || getSupportEmail()
+}
+
+/** Nodemailer + Brevo often put extra detail on the error object */
+function formatSmtpError(err) {
+  if (!err) return 'Unknown error'
+  const parts = [err.message || String(err)]
+  if (err.response) parts.push(String(err.response).trim())
+  if (err.responseCode != null) parts.push(`smtp=${err.responseCode}`)
+  if (err.code) parts.push(`code=${err.code}`)
+  const joined = parts.filter(Boolean).join(' — ')
+  const lower = joined.toLowerCase()
+  let hint = ''
+  if (/535|authentication failed|invalid login|535 5\.7\.8/i.test(lower)) {
+    hint +=
+      ' For Brevo: use the SMTP key from Brevo → SMTP & API → SMTP (create/copy SMTP key). Do not use the "API keys" xkeysib key as the password.'
+  }
+  if (/sender|not verified|invalid from|from address/i.test(lower)) {
+    hint +=
+      ' Set EMAIL_FROM / FEEDBACK_REPLY_FROM to an address verified in Brevo (Senders).'
+  }
+  return joined + hint
+}
+
 // Dynamically import nodemailer to handle cases where it's not installed
 let nodemailer = null
 let nodemailerLoaded = false
@@ -33,41 +71,65 @@ async function initializeEmailService() {
   }
 
   try {
-    // Option 1: Use SendGrid (if configured)
-    if (process.env.SENDGRID_API_KEY) {
+    const smtpUser = process.env.SMTP_USER
+    const smtpPassword = process.env.SMTP_PASSWORD
+    const sendGridKey = process.env.SENDGRID_API_KEY?.trim()
+
+    // Prefer explicit SMTP (Zoho, Gmail, etc.) when set — avoids mis-detecting Brevo/other keys as SendGrid.
+    // SendGrid API keys start with "SG."; keys like "xkeysib-..." are Brevo and must use Brevo SMTP, not SendGrid.
+    const useSendGrid =
+      sendGridKey &&
+      sendGridKey.startsWith('SG.') &&
+      (!smtpUser || !smtpPassword)
+
+    if (useSendGrid) {
       transporter = nodemailer.createTransport({
         host: 'smtp.sendgrid.net',
         port: 587,
         secure: false,
         auth: {
           user: 'apikey',
-          pass: process.env.SENDGRID_API_KEY,
+          pass: sendGridKey,
         },
       })
       return transporter
     }
 
-    // Option 2: Use SMTP (Gmail, Firebase SMTP, or custom SMTP)
-    const smtpUser = process.env.SMTP_USER
-    const smtpPassword = process.env.SMTP_PASSWORD
-
     if (!smtpUser || !smtpPassword) {
-      console.warn('⚠️  Email service not configured. SMTP_USER and SMTP_PASSWORD required.')
+      if (sendGridKey && !sendGridKey.startsWith('SG.')) {
+        console.warn(
+          '⚠️  SENDGRID_API_KEY is set but is not a SendGrid key (expected SG.*). Use SMTP_* for Zoho/Brevo/Gmail, or unset the wrong key.'
+        )
+      }
+      console.warn('⚠️  Email service not configured. Set SMTP_USER and SMTP_PASSWORD (or a real SendGrid SG.* key).')
       return null
     }
 
+    const host = process.env.SMTP_HOST || 'smtp.gmail.com'
+    const isBrevo = /brevo\.com|sendinblue\.com/i.test(host)
+
     const emailConfig = {
-      host: process.env.SMTP_HOST || 'smtp.gmail.com',
-      port: parseInt(process.env.SMTP_PORT || '587'),
-      secure: false, // true for 465, false for other ports
+      host,
+      port: parseInt(process.env.SMTP_PORT || '587', 10),
+      secure: false, // 587 + STARTTLS
       auth: {
         user: smtpUser,
         pass: smtpPassword,
       },
-      // Additional options for better deliverability
-      tls: {
-        rejectUnauthorized: false, // For self-signed certificates (not recommended for production)
-      },
+      // Brevo relay: STARTTLS + valid server cert (see https://developers.brevo.com/docs/smtp-integration)
+      ...(isBrevo
+        ? {
+            requireTLS: true,
+            tls: {
+              minVersion: 'TLSv1.2',
+              rejectUnauthorized: true,
+            },
+          }
+        : {
+            tls: {
+              rejectUnauthorized: false,
+            },
+          }),
     }
 
     transporter = nodemailer.createTransport(emailConfig)
@@ -136,16 +198,165 @@ export async function sendDeletionEmail(to, deletionLink, userName = '') {
     console.log('✅ Deletion email sent successfully:', info.messageId)
     return { success: true, messageId: info.messageId }
   } catch (error) {
-    console.error('❌ Failed to send deletion email:', error)
+    console.error('❌ Failed to send deletion email:', formatSmtpError(error))
     // Log the link for development/testing
     console.log(`[DELETE ACCOUNT] Deletion link for ${to}: ${deletionLink}`)
-    return { success: false, error: error.message }
+    return { success: false, error: formatSmtpError(error) }
+  }
+}
+
+/**
+ * Send user feedback to the system owners.
+ * @param {string} to - Owner/operations inbox (defaults to SUPPORT_EMAIL / getSupportEmail())
+ * @param {object} feedback - Feedback payload from the app
+ */
+export async function sendFeedbackEmail(to, feedback) {
+  const {
+    type,
+    message,
+    rating,
+    survey,
+    screenshotUrls = [],
+    userEmail,
+    userId,
+  } = feedback || {}
+
+  try {
+    let emailTransporter
+    try {
+      emailTransporter = await initializeEmailService()
+    } catch (initErr) {
+      console.warn('Email service initialization error (feedback):', initErr.message)
+      console.log('[FEEDBACK]', JSON.stringify(feedback, null, 2))
+      return { success: false, message: 'Email service initialization failed', error: initErr.message }
+    }
+
+    if (!emailTransporter) {
+      console.warn('Email service not configured. Logging feedback instead of emailing.')
+      console.log('[FEEDBACK]', JSON.stringify(feedback, null, 2))
+      return { success: false, message: 'Email service not configured' }
+    }
+
+    const fromEmail = process.env.EMAIL_FROM || process.env.SMTP_USER || 'noreply@aicropcare.com'
+    const fromName = process.env.EMAIL_FROM_NAME || 'AI-Powered CropCare'
+    const ownerEmail = to || process.env.FEEDBACK_EMAIL || getSupportEmail()
+
+    const subject = `[CropCare Feedback] ${type || 'Feedback'} from ${userEmail || 'unknown user'}`
+
+    const lines = []
+    lines.push(`Type: ${type || 'N/A'}`)
+    if (userEmail) lines.push(`User email: ${userEmail}`)
+    if (userId) lines.push(`User ID: ${userId}`)
+    if (typeof rating === 'number' && rating > 0) lines.push(`Rating: ${rating} / 5`)
+    lines.push('')
+    lines.push('Message:')
+    lines.push(message || '(empty)')
+    if (survey) {
+      lines.push('')
+      lines.push('Additional comments / survey:')
+      lines.push(survey)
+    }
+    if (screenshotUrls.length) {
+      lines.push('')
+      lines.push('Screenshots:')
+      screenshotUrls.forEach((url, idx) => {
+        lines.push(`${idx + 1}. ${url}`)
+      })
+    }
+
+    const textBody = lines.join('\n')
+
+    const mailOptions = {
+      from: `"${fromName}" <${fromEmail}>`,
+      to: ownerEmail,
+      subject,
+      text: textBody,
+    }
+
+    const info = await emailTransporter.sendMail(mailOptions)
+    console.log('✅ Feedback email sent successfully:', info.messageId)
+    return { success: true, messageId: info.messageId }
+  } catch (error) {
+    console.error('❌ Failed to send feedback email:', formatSmtpError(error))
+    console.log('[FEEDBACK]', JSON.stringify(feedback, null, 2))
+    return { success: false, error: formatSmtpError(error) }
+  }
+}
+
+/**
+ * Send an email reply directly to the user who submitted feedback.
+ * @param {string} to - User email address
+ * @param {object} payload - { replyMessage, type, message, rating, survey, userEmail }
+ */
+export async function sendFeedbackReplyEmail(to, payload) {
+  const { replyMessage, type, message, rating, survey, userEmail } = payload || {}
+  try {
+    let emailTransporter
+    try {
+      emailTransporter = await initializeEmailService()
+    } catch (initErr) {
+      console.warn('Email service initialization error (feedback reply):', initErr.message)
+      console.log('[FEEDBACK REPLY]', JSON.stringify(payload, null, 2))
+      return { success: false, message: 'Email service initialization failed', error: initErr.message }
+    }
+
+    if (!emailTransporter) {
+      console.warn('Email service not configured. Logging feedback reply instead of emailing.')
+      console.log('[FEEDBACK REPLY]', JSON.stringify({ to, ...payload }, null, 2))
+      return { success: false, message: 'Email service not configured' }
+    }
+
+    const fromEmail = getFeedbackReplyFromEmail()
+    const fromName = process.env.EMAIL_FROM_NAME || 'AI-Powered CropCare'
+    const supportAddr = getSupportEmail()
+    const recipient = to || userEmail || null
+
+    if (!recipient) {
+      return { success: false, message: 'Recipient email is required' }
+    }
+
+    const subject = `[CropCare Reply] ${type || 'Your feedback'}`
+
+    const lines = []
+    lines.push('Hello,')
+    lines.push('')
+    lines.push(replyMessage ? String(replyMessage).trim() : '(empty reply)')
+    lines.push('')
+    lines.push('---')
+    lines.push('Original feedback:')
+    lines.push(`Type: ${type || 'N/A'}`)
+    if (typeof rating === 'number' && rating > 0) lines.push(`Rating: ${rating} / 5`)
+    if (message) lines.push(`Message: ${message}`)
+    if (survey) lines.push(`Additional comments: ${survey}`)
+    lines.push('')
+    lines.push(`For reference, contact: ${supportAddr}`)
+    lines.push('')
+    lines.push('Best regards,')
+    lines.push('AI-Powered CropCare Team')
+
+    const textBody = lines.join('\n')
+
+    const mailOptions = {
+      from: `"${fromName}" <${fromEmail}>`,
+      to: recipient,
+      subject,
+      text: textBody,
+    }
+
+    const info = await emailTransporter.sendMail(mailOptions)
+    console.log('✅ Feedback reply email sent successfully:', info.messageId)
+    return { success: true, messageId: info.messageId }
+  } catch (error) {
+    const detail = formatSmtpError(error)
+    console.error('❌ Failed to send feedback reply email:', detail)
+    return { success: false, error: detail }
   }
 }
 
 function generatePlainTextEmail(deletionLink, userName) {
   const greeting = userName ? `Hello ${userName},` : 'Hello,'
-  
+  const support = getSupportEmail()
+
   return `${greeting}
 
 You requested to delete your account. Click the link below to confirm. If you did not request this, ignore this email.
@@ -163,7 +374,7 @@ ${deletionLink}
 
 If the link doesn't work, copy and paste it into your browser.
 
-If you have any questions, contact us at support@aicropcare.com
+If you have any questions, contact us at ${support}
 
 Best regards,
 AI-Powered CropCare Team
@@ -174,7 +385,8 @@ This is an automated message. Please do not reply to this email.`
 
 function generateHtmlEmail(deletionLink, userName) {
   const greeting = userName ? `Hello ${userName},` : 'Hello,'
-  
+  const support = getSupportEmail()
+
   return `
 <!DOCTYPE html>
 <html lang="en">
@@ -219,7 +431,7 @@ function generateHtmlEmail(deletionLink, userName) {
     <div style="border-top: 1px solid #e5e7eb; margin-top: 30px; padding-top: 20px;">
       <p style="color: #9ca3af; font-size: 12px; margin: 0;">
         This link will expire in <strong>1 hour</strong>.<br>
-        If you have any questions, contact us at <a href="mailto:support@aicropcare.com" style="color: #10b981;">support@aicropcare.com</a>
+        If you have any questions, contact us at <a href="mailto:${support}" style="color: #10b981;">${support}</a>
       </p>
     </div>
   </div>

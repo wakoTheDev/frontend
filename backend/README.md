@@ -17,7 +17,7 @@ Node/Express API for the AI‑Powered CropCare Dashboard. Handles image upload, 
 
    - `OPEN_ROUTER_API_KEY` **or** `OPENAI_API_KEY`
    - `OPENAI_MODEL` (e.g. `gpt-4o` or `gpt-4o-mini`)
-   - Firebase Admin credentials (`FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY`)
+   - **Supabase** (`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`) for account deletion — see `README_DELETE_ACCOUNT.md`
    - Email transport (SMTP or SendGrid) for delete‑account emails
 
 3. **Start the server in dev mode (with watch):**
@@ -51,10 +51,10 @@ Node/Express API for the AI‑Powered CropCare Dashboard. Handles image upload, 
   - Health check; also reports whether the AI key appears configured.
 
 - `POST /api/account/delete-request`
-  - Creates a delete‑account request, sends a confirmation email, stores a time‑limited token.
+  - Creates a delete‑account request in Supabase, sends a confirmation email with a time‑limited token.
 
-- `POST /api/account/confirm`
-  - Confirms deletion using the token, deletes the user’s auth record, Firestore data, and storage files.
+- `POST /api/account/delete-confirm`
+  - Confirms deletion using the token; deletes the user’s Supabase data, storage files, and Auth user.
 
 ## Using Your Own Crop Model
 

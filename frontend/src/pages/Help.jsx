@@ -2,12 +2,13 @@ import { useState } from 'react'
 import { useTranslation } from '../contexts/AppSettingsContext'
 import { useAuth } from '../contexts/AuthContext'
 import GetStartedModal from '../components/GetStartedModal'
+import { SUPPORT_EMAIL } from '../constants/support'
 
 const faqs = [
   { q: 'How do I analyze a plant image?', a: 'Go to the Dashboard, click "Load / Take" to upload or capture a photo, then click "Analyze". Results and recommendations appear in a few seconds.' },
   { q: 'What image format is supported?', a: 'We support common image formats: JPEG, PNG, WebP. For best results use a clear, well-lit photo of the affected leaves or plant.' },
   { q: 'Where is my analysis history stored?', a: 'Your history is stored securely in your account. Use "Download All Analysis History" to export as PDF, CSV, or JSON.' },
-  { q: 'How do I contact support?', a: 'Use the Feedback page to report issues, or email support@aicropcare.com. Support hours: Mon–Sat, 9AM–6PM EST.' },
+  { q: 'How do I contact support?', a: `Use the Feedback page to report issues, or email ${SUPPORT_EMAIL}. Support hours: Mon–Sat, 9AM–6PM EST.` },
 ]
 
 export default function Help() {
@@ -86,7 +87,7 @@ export default function Help() {
 
       <section className="glass-card dark:glass-card-dark rounded-xl p-6">
         <h2 className="text-lg font-semibold text-slate-900 dark:text-white mb-3">{t('contactCommunity')}</h2>
-        <p className="text-slate-600 dark:text-slate-400 text-sm mb-2"><strong>Support:</strong> <a href="mailto:support@aicropcare.com" className="text-emerald-600 dark:text-emerald-400 hover:underline">support@aicropcare.com</a></p>
+        <p className="text-slate-600 dark:text-slate-400 text-sm mb-2"><strong>Support:</strong> <a href={`mailto:${SUPPORT_EMAIL}`} className="text-emerald-600 dark:text-emerald-400 hover:underline">{SUPPORT_EMAIL}</a></p>
         <p className="text-slate-600 dark:text-slate-400 text-sm mb-2"><strong>Community forum:</strong> <a href="#" className="text-emerald-600 dark:text-emerald-400 hover:underline">User discussions</a> (link when available)</p>
       </section>
       

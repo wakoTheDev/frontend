@@ -82,7 +82,7 @@ export default function DeleteAccountConfirmation() {
           <img 
             src={logoImage} 
             alt="AI-Powered CropCare Logo" 
-            className="w-12 h-12 object-contain"
+              className="w-12 h-12 object-cover object-center block"
             aria-hidden="true"
           />
           <h1 className="text-2xl font-bold text-white drop-shadow-sm">AI-Powered-CropCare</h1>

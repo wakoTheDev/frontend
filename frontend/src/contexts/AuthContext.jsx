@@ -1,13 +1,10 @@
 import { createContext, useContext, useEffect, useState, useRef, useCallback } from 'react'
-import { onAuthStateChanged, signOut as firebaseSignOut, onIdTokenChanged } from 'firebase/auth'
-import { auth } from '../lib/firebase'
+import { supabase } from '../lib/supabaseClient'
 
 const AuthContext = createContext(null)
 
 // Session timeout: 30 minutes of inactivity (in milliseconds)
 const SESSION_TIMEOUT = 30 * 60 * 1000
-// Token refresh interval: Check every 5 minutes
-const TOKEN_CHECK_INTERVAL = 5 * 60 * 1000
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
@@ -53,8 +50,10 @@ export function AuthProvider({ children }) {
         console.warn('Failed to clear sessionStorage:', e)
       }
 
-      // Sign out from Firebase (this clears auth state)
-      await firebaseSignOut(auth)
+      // Sign out from Supabase (this clears auth state)
+      if (supabase) {
+        await supabase.auth.signOut()
+      }
       
       // Clear user state
       setUser(null)
@@ -62,64 +61,42 @@ export function AuthProvider({ children }) {
       lastActivityRef.current = Date.now()
     } catch (err) {
       console.error('Sign out error:', err)
-      // Still clear local state even if Firebase signOut fails
+      // Still clear local state even if Supabase signOut fails
       setUser(null)
       setSessionExpired(false)
     }
   }, [])
 
   useEffect(() => {
-    // Listen for auth state changes
-    const unsubscribeAuth = onAuthStateChanged(auth, async (u) => {
-      if (u) {
-        // User is signed in - verify token is valid
-        try {
-          // Force token refresh to ensure it's still valid
-          const tokenResult = await u.getIdTokenResult()
-          
-          // Check if token is expired
-          if (tokenResult.expirationTime && new Date(tokenResult.expirationTime) < new Date()) {
-            console.log('Token expired, signing out')
-            await handleSignOut()
-            return
-          }
+    if (!supabase) {
+      setLoading(false)
+      return
+    }
 
-          setUser(u)
-          setSessionExpired(false)
-          lastActivityRef.current = Date.now()
-          
-          // Show location prompt for new sign-ins
-          if (!u.metadata?.lastSignInTime) {
-            setShowLocationPrompt(true)
-          }
-        } catch (err) {
-          console.error('Token validation error:', err)
-          // Token is invalid, sign out
-          await handleSignOut()
-        }
-      } else {
-        // User is signed out
+    // Initial user load
+    supabase.auth.getUser().then(({ data, error }) => {
+      if (error) {
+        console.warn('Supabase getUser error:', error)
         setUser(null)
         setSessionExpired(false)
+      } else {
+        const u = data?.user || null
+        // Normalize shape so existing code can keep using user.uid
+        const normalized = u ? { ...u, uid: u.id } : null
+        setUser(normalized)
+        setSessionExpired(false)
+        lastActivityRef.current = Date.now()
       }
       setLoading(false)
     })
 
-    // Listen for token changes (including expiration)
-    const unsubscribeToken = onIdTokenChanged(auth, async (u) => {
-      if (u) {
-        try {
-          // Refresh token if needed
-          const tokenResult = await u.getIdTokenResult(true)
-          if (tokenResult.expirationTime && new Date(tokenResult.expirationTime) < new Date()) {
-            console.log('Token expired during refresh')
-            await handleSignOut()
-          }
-        } catch (err) {
-          console.error('Token refresh error:', err)
-          await handleSignOut()
-        }
-      }
+    // Listen for auth state changes
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      const u = session?.user || null
+      const normalized = u ? { ...u, uid: u.id } : null
+      setUser(normalized)
+      setSessionExpired(false)
+      lastActivityRef.current = Date.now()
     })
 
     // Set up activity tracking
@@ -131,29 +108,13 @@ export function AuthProvider({ children }) {
     // Set up inactivity check
     inactivityTimerRef.current = setInterval(checkSessionExpiration, 60000) // Check every minute
 
-    // Set up token refresh check
-    tokenCheckIntervalRef.current = setInterval(async () => {
-      if (user) {
-        try {
-          await user.getIdToken(true) // Force refresh
-        } catch (err) {
-          console.error('Token refresh failed:', err)
-          await handleSignOut()
-        }
-      }
-    }, TOKEN_CHECK_INTERVAL)
-
     return () => {
-      unsubscribeAuth()
-      unsubscribeToken()
+      sub?.subscription?.unsubscribe()
       activityEvents.forEach((event) => {
         window.removeEventListener(event, updateActivity)
       })
       if (inactivityTimerRef.current) {
         clearInterval(inactivityTimerRef.current)
-      }
-      if (tokenCheckIntervalRef.current) {
-        clearInterval(tokenCheckIntervalRef.current)
       }
     }
   }, [user, updateActivity, checkSessionExpiration, handleSignOut])

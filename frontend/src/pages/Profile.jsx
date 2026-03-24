@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { usePrefetch } from '../contexts/PrefetchContext'
 import { useTranslation } from '../contexts/AppSettingsContext'
-import { getUserProfile, setUserProfile, uploadProfilePhoto, deleteProfilePhoto } from '../lib/firestore'
+import { getUserProfile, setUserProfile, uploadProfilePhoto, deleteProfilePhoto } from '../lib/supabase'
 import { resizeImageForAvatar } from '../lib/imageUtils'
 import { User, Camera, Trash2 } from 'lucide-react'
 
@@ -31,20 +31,35 @@ export default function Profile() {
   const formRef = useRef(form)
   formRef.current = form
 
+  /** Text fields must stay strings; `location` in DB can be JSON (GPS) from other flows — never call .trim() on that. */
+  const locationForForm = (loc) => (typeof loc === 'string' ? loc : '')
+
   useEffect(() => {
     if (!user?.uid) return
     const cached = getCachedProfile(user.uid)
     if (cached !== undefined) {
       setProfile(cached)
-      if (cached) setForm((prev) => ({ ...prev, ...cached, photoURL: cached.photoURL ?? prev.photoURL ?? '' }))
-      else setForm((prev) => ({ ...prev, fullName: user.displayName || '', accountType: 'Free' }))
+      if (cached) {
+        setForm((prev) => ({
+          ...prev,
+          ...cached,
+          location: locationForForm(cached.location),
+          photoURL: cached.photoURL ?? prev.photoURL ?? '',
+        }))
+      } else setForm((prev) => ({ ...prev, fullName: user.displayName || '', accountType: 'Free' }))
       setLoading(false)
     }
     getUserProfile(user.uid).then((p) => {
       setCachedProfile(user.uid, p)
       setProfile(p)
-      if (p) setForm((prev) => ({ ...prev, ...p, photoURL: p.photoURL ?? prev.photoURL ?? '' }))
-      else setForm((prev) => ({ ...prev, fullName: user.displayName || '', accountType: 'Free' }))
+      if (p) {
+        setForm((prev) => ({
+          ...prev,
+          ...p,
+          location: locationForForm(p.location),
+          photoURL: p.photoURL ?? prev.photoURL ?? '',
+        }))
+      } else setForm((prev) => ({ ...prev, fullName: user.displayName || '', accountType: 'Free' }))
     }).finally(() => setLoading(false))
   }, [user?.uid, user?.displayName, getCachedProfile, setCachedProfile])
 
@@ -53,7 +68,7 @@ export default function Profile() {
     setForm((prev) => ({ ...prev, [name]: value }))
     setSaveStatus(null)
     
-    // Auto-save to Firebase after a short delay (debounce)
+    // Auto-save to Supabase after a short delay (debounce)
     if (user?.uid) {
       // Clear previous timeout
       if (autoSaveTimeoutRef.current) {
@@ -65,7 +80,7 @@ export default function Profile() {
         try {
           const currentForm = formRef.current
           await setUserProfile(user.uid, { [name]: value.trim() })
-          console.log(`Auto-saved ${name} to Firebase`)
+          console.log(`Auto-saved ${name} to Supabase`)
         } catch (err) {
           console.warn('Auto-save failed:', err)
         }
@@ -106,7 +121,7 @@ export default function Profile() {
       setForm(next)
       setProfile((prev) => (prev ? { ...prev, photoURL: url } : { photoURL: url }))
       setSaveStatus('saved')
-      // Save photo URL to Firebase profile
+      // Save photo URL to Supabase profile
       await setUserProfile(user.uid, { photoURL: url })
     } catch (err) {
       console.error('Failed to upload profile photo:', err)
@@ -129,7 +144,7 @@ export default function Profile() {
       setForm(next)
       setProfile((prev) => (prev ? { ...prev, photoURL: '' } : null))
       setSaveStatus('saved')
-      // Save removal to Firebase profile
+      // Save removal to Supabase profile
       await setUserProfile(user.uid, { photoURL: '' })
     } catch (err) {
       console.error('Failed to remove profile photo:', err)
@@ -147,18 +162,26 @@ export default function Profile() {
     const previousForm = { ...form }
     
     try {
-      // Save all profile data to Firebase
+      const str = (v) => (typeof v === 'string' ? v.trim() : '')
+      // If DB has GPS object in `location`, keep it when the address field is empty
+      const address = str(form.location)
+      const locationPayload =
+        address !== ''
+          ? address
+          : profile?.location && typeof profile.location === 'object'
+            ? profile.location
+            : ''
+
+      // Save all profile data to Supabase
       const profileData = {
-        fullName: form.fullName.trim() || '',
-        phone: form.phone.trim() || '',
-        location: form.location.trim() || '',
+        fullName: str(form.fullName),
+        phone: str(form.phone),
+        location: locationPayload,
         accountType: form.accountType || 'Free',
-        farmSize: form.farmSize.trim() || '',
-        primaryCrops: form.primaryCrops.trim() || '',
-        growingZone: form.growingZone.trim() || '',
+        farmSize: str(form.farmSize),
+        primaryCrops: str(form.primaryCrops),
+        growingZone: str(form.growingZone),
         photoURL: form.photoURL || '',
-        email: user.email || '',
-        updatedAt: new Date().toISOString(),
       }
       
       await setUserProfile(user.uid, profileData)

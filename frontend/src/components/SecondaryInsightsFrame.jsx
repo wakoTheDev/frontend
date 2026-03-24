@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from '../contexts/AppSettingsContext'
+import { formatTimestamp } from '../lib/formatDate'
 import RecommendationsCard from './RecommendationsCard'
 import ContentModal from './ContentModal'
 
@@ -29,6 +30,7 @@ export default function SecondaryInsightsFrame({
       </h2>
 
       <div className="space-y-6 flex-1">
+        {/* Recommendations */}
         <div>
           <button
             type="button"
@@ -49,6 +51,27 @@ export default function SecondaryInsightsFrame({
           </div>
         </div>
 
+        {/* Powerful Insights */}
+        <div>
+          <button
+            type="button"
+            onClick={() => setOpenModal('insights')}
+            className="w-full text-left"
+          >
+            <h3 className="text-slate-800 dark:text-slate-100 font-semibold mb-2 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors cursor-pointer flex items-center gap-2">
+              {t('powerfulInsights')}
+              <span className="text-xs text-slate-500 dark:text-slate-400">(Click to expand)</span>
+            </h3>
+          </button>
+          <div
+            className="glass-input dark:glass-input-dark rounded-xl p-4 min-h-[80px] text-slate-700 dark:text-slate-300 text-sm whitespace-pre-wrap cursor-pointer hover:ring-2 hover:ring-emerald-500/50 transition-all"
+            onClick={() => setOpenModal('insights')}
+          >
+            {insights || t('runAnalysisToSeeInsights')}
+          </div>
+        </div>
+
+        {/* Analysis History – moved below Powerful Insights */}
         <div>
           <button
             type="button"
@@ -70,7 +93,7 @@ export default function SecondaryInsightsFrame({
               ) : (
                 history.slice(0, 10).map((item, i) => (
                   <li key={item.id || i} className="text-sm text-slate-600 dark:text-slate-300">
-                    {item.timestamp ? new Date(item.timestamp).toLocaleString() : '—'} — {t('accShort')}: {item.accuracyRate}%
+                    {formatTimestamp(item.timestamp)} — {t('accShort')}: {item.accuracyRate}%
                     {item.cropType ? ` — ${item.cropType}` : ''}
                   </li>
                 ))
@@ -79,25 +102,7 @@ export default function SecondaryInsightsFrame({
           </div>
         </div>
 
-        <div>
-          <button
-            type="button"
-            onClick={() => setOpenModal('insights')}
-            className="w-full text-left"
-          >
-            <h3 className="text-slate-800 dark:text-slate-100 font-semibold mb-2 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors cursor-pointer flex items-center gap-2">
-              {t('powerfulInsights')}
-              <span className="text-xs text-slate-500 dark:text-slate-400">(Click to expand)</span>
-            </h3>
-          </button>
-          <div
-            className="glass-input dark:glass-input-dark rounded-xl p-4 min-h-[80px] text-slate-700 dark:text-slate-300 text-sm whitespace-pre-wrap cursor-pointer hover:ring-2 hover:ring-emerald-500/50 transition-all"
-            onClick={() => setOpenModal('insights')}
-          >
-            {insights || t('runAnalysisToSeeInsights')}
-          </div>
-        </div>
-
+        {/* Export */}
         <div>
           <h3 className="text-slate-800 dark:text-slate-100 font-semibold mb-2">
             {t('exportPDF')}
@@ -144,7 +149,7 @@ export default function SecondaryInsightsFrame({
                 >
                   <div className="flex flex-wrap items-center justify-between gap-3 md:gap-4">
                     <span className="font-bold text-lg md:text-xl text-slate-900 dark:text-slate-100">
-                      {item.timestamp ? new Date(item.timestamp).toLocaleString() : '—'}
+                      {formatTimestamp(item.timestamp)}
                     </span>
                     <div className="flex gap-4 md:gap-6 flex-wrap">
                       <span className="font-semibold bg-emerald-100 dark:bg-emerald-900/50 px-3 py-1 rounded-lg text-emerald-800 dark:text-emerald-200">

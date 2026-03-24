@@ -2,7 +2,7 @@
 .env
 *.env
 
-# Firebase / service account keys (if any)
+# Service account / credential JSON (if any)
 *serviceAccount*.json
 
 # Logs

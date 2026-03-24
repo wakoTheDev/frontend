@@ -47,14 +47,14 @@ export async function exportAnalysisPDF(analyses, includeImages = true) {
     }
     if (includeImages && a.imageUrl) {
       try {
-        // Handle Firebase Storage URLs and data URLs
+        // Handle remote image URLs (e.g. Supabase Storage) and data URLs
         if (typeof a.imageUrl === 'string') {
           if (a.imageUrl.startsWith('data:')) {
             // Data URL (base64)
             doc.addImage(a.imageUrl, 'JPEG', 14, y, 60, 40)
             y += 45
           } else if (a.imageUrl.startsWith('http://') || a.imageUrl.startsWith('https://')) {
-            // Firebase Storage URL or external URL - fetch and convert to data URL
+            // Supabase Storage / public URL - fetch and convert to data URL
             try {
               const imgResponse = await fetch(a.imageUrl)
               const imgBlob = await imgResponse.blob()

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { MapPin, X } from 'lucide-react'
 import { requestLocationPermission } from '../lib/location'
-import { setUserProfile } from '../lib/firestore'
+import { setUserProfile } from '../lib/supabase'
 import { useTranslation } from '../contexts/AppSettingsContext'
 
 /**
@@ -21,7 +21,7 @@ export default function LocationPrompt({ userId, onComplete }) {
     
     // Show prompt if location not yet stored
     const checkLocation = async () => {
-      // We'll check Firebase profile, but for now show prompt
+      // We'll check Supabase profile, but for now show prompt
       setShow(true)
     }
     checkLocation()
@@ -36,7 +36,7 @@ export default function LocationPrompt({ userId, onComplete }) {
       const result = await requestLocationPermission()
       
       if (result.granted && result.location && userId) {
-        // Save location to Firebase
+        // Save location to Supabase
         try {
           await setUserProfile(userId, {
             location: {

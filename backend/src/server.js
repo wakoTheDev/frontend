@@ -6,6 +6,8 @@ import { analyzeRouter } from './routes/analyze.js'
 import { recommendationsRouter } from './routes/recommendations.js'
 import { insightsRouter } from './routes/insights.js'
 import { accountRouter } from './routes/account.js'
+import { feedbackRouter } from './routes/feedback.js'
+import { chatRouter } from './routes/chat.js'
 import { logger } from './utils/logger.js'
 
 dotenv.config()
@@ -22,6 +24,8 @@ app.use(express.json())
 app.use('/api', analyzeRouter)
 app.use('/api', recommendationsRouter)
 app.use('/api', insightsRouter)
+app.use('/api', feedbackRouter)
+app.use('/api', chatRouter)
 app.use('/api/account', accountRouter)
 
 app.get('/api/health', (_, res) => {

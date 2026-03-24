@@ -10,8 +10,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.99.1",
     "@tailwindcss/vite": "^4.1.18",
-    "firebase": "^12.9.0",
     "jspdf": "^4.1.0",
     "lucide-react": "^0.564.0",
     "react": "^19.2.0",

@@ -43,7 +43,7 @@ export default function MobileApp() {
           {t('mobileAppTitle')}
         </h1>
         <p className="text-xl text-slate-600 dark:text-slate-400 max-w-2xl mx-auto mb-8">
-          Take AI-powered crop analysis anywhere. Download our mobile app for iOS and Android.
+          Take AI-Powered CropCare analysis anywhere. Download our mobile app for iOS and Android.
         </p>
         <div className="flex flex-wrap justify-center gap-4">
           <a
