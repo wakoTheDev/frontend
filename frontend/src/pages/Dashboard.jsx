@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { useTranslation } from '../contexts/AppSettingsContext'
 import { analyzeCropImage, getRecommendations, getInsights, setOfflineAnalysisCache } from '../lib/api'
+import { isLeafValidationError, getValidationSuggestion } from '../lib/validationHelpers'
 import { saveAnalysis, getAnalysisHistory } from '../lib/analysisStore'
 import { exportAnalysisPDF } from '../lib/pdfExport'
 import { useWeatherMonitoring } from '../hooks/useWeatherMonitoring'
@@ -393,7 +394,17 @@ export default function Dashboard() {
         }
       }
     } catch (err) {
-      setError(err.message || 'Analysis failed')
+      const errorMsg = err.message || 'Analysis failed'
+
+      // If this came from backend leaf validation explicitly, mark it clearly.
+      if (err.validationFailed || isLeafValidationError(errorMsg)) {
+        const suggestion = getValidationSuggestion(errorMsg)
+        setError(
+          `Leaf validation failed: ${errorMsg}${suggestion ? `\n\n${suggestion}` : ''}`
+        )
+      } else {
+        setError(errorMsg)
+      }
     } finally {
       setLoading(false)
     }

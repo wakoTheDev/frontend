@@ -1,7 +1,9 @@
+import dotenv from 'dotenv'
+dotenv.config()
+
 import express from 'express'
 import cors from 'cors'
 import morgan from 'morgan'
-import dotenv from 'dotenv'
 import { analyzeRouter } from './routes/analyze.js'
 import { recommendationsRouter } from './routes/recommendations.js'
 import { insightsRouter } from './routes/insights.js'
@@ -10,21 +12,11 @@ import { feedbackRouter } from './routes/feedback.js'
 import { chatRouter } from './routes/chat.js'
 import { logger } from './utils/logger.js'
 
-dotenv.config()
-
 const app = express()
 const PORT = process.env.PORT || 3001
 
 app.use(morgan('dev', { stream: { write: (msg) => process.stdout.write(msg) } }))
-
-app.use(cors({
-  origin: '*',
-  credentials: false,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-}))
-
-app.options('*', cors())
+app.use(cors({ origin: true, credentials: true }))
 app.use(express.json())
 
 app.use('/api', analyzeRouter)
@@ -34,42 +26,35 @@ app.use('/api', feedbackRouter)
 app.use('/api', chatRouter)
 app.use('/api/account', accountRouter)
 
-// ── Health Check ─────────────────────────────────────────────────────────────
 app.get('/api/health', (_, res) => {
   const apiKeyConfigured = !!process.env.OPEN_ROUTER_API_KEY?.trim()
   const apiKeyValid = apiKeyConfigured && process.env.OPEN_ROUTER_API_KEY.trim().startsWith('sk-or-v1-')
-  const supabaseConfigured = !!(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL)
-
-  res.status(200).json({
+  
+  res.json({ 
     status: 'ok',
-    timestamp: new Date().toISOString(),
-    uptime: Math.floor(process.uptime()),
-    environment: process.env.NODE_ENV || 'development',
-    services: {
-      openrouter: {
-        configured: apiKeyConfigured,
-        valid: apiKeyValid,
-        message: !apiKeyConfigured
-          ? 'OPEN_ROUTER_API_KEY not set'
-          : apiKeyValid ? 'API key is configured' : 'API key format appears invalid'
-      },
-      supabase: {
-        configured: supabaseConfigured,
-        message: supabaseConfigured ? 'Supabase URL is configured' : 'SUPABASE_URL not set'
-      }
+    openrouter: {
+      configured: apiKeyConfigured,
+      valid: apiKeyValid,
+      message: apiKeyConfigured 
+        ? (apiKeyValid ? 'API key is configured' : 'API key format appears invalid')
+        : 'OPEN_ROUTER_API_KEY not set in .env file'
     }
   })
-})
-
-// ── Ping (lightweight liveness check) ────────────────────────────────────────
-app.get('/api/ping', (_, res) => {
-  res.status(200).json({ status: 'ok', message: 'pong' })
 })
 
 app.listen(PORT, () => {
   logger.info(`CropCare API running at http://localhost:${PORT}`)
   logger.info(`Log level: ${process.env.LOG_LEVEL || 'info'} (set LOG_LEVEL=debug for more output)`)
 
+  // Gemini key check
+  const geminiKey = process.env.GEMINI_API_KEY?.trim()
+  if (!geminiKey) {
+    logger.warn('GEMINI_API_KEY is not set - leaf validation will not work')
+  } else {
+    logger.info('Gemini API key is configured ✓')
+  }
+
+  // OpenRouter key check
   const apiKey = process.env.OPEN_ROUTER_API_KEY?.trim()
   if (!apiKey) {
     logger.warn('OPEN_ROUTER_API_KEY is not set in .env file')
