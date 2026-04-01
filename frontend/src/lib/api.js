@@ -1,9 +1,7 @@
 import { supabase } from './supabaseClient'
 
-// Base URL for backend API.
-// In development we proxy `/api` to http://localhost:3001 via Vite.
-// In production (e.g. Vercel), set VITE_API_BASE_URL to your backend URL, e.g. https://your-backend.example.com/api
-const API_BASE = "https://web-production-0845d.up.railway.app/predict"
+const PREDICT_URL = "https://web-production-0845d.up.railway.app/predict"
+const EXPRESS_BASE = "http://localhost:3001/api"
 const SETTINGS_KEY = 'cropcare-app-settings'
 const OFFLINE_CACHE_KEY = 'cropcare-offline-analysis-cache'
 
@@ -20,9 +18,6 @@ function isOfflineModeEnabled() {
   return !!getAppSettings().offlineMode
 }
 
-/**
- * Get cached analysis for offline use. Call setOfflineAnalysisCache(record) after each successful analysis.
- */
 export function getOfflineAnalysisCache() {
   try {
     const raw = localStorage.getItem(OFFLINE_CACHE_KEY)
@@ -33,9 +28,6 @@ export function getOfflineAnalysisCache() {
   }
 }
 
-/**
- * Store a serializable analysis record for offline use. Omit non-serializable fields (e.g. imageFile).
- */
 export function setOfflineAnalysisCache(record) {
   if (!record) return
   const payload = {
@@ -68,25 +60,73 @@ export async function analyzeCropImage(file) {
     throw new Error('No cached analysis. Connect to the internet, run an analysis, then you can view cached results offline.')
   }
 
+  // ✅ Step 1 — Validate image via Express → Claude vision
+  const validateForm = new FormData()
+  validateForm.append('file', file)
+
+  const validateRes = await fetch(`${EXPRESS_BASE}/validate`, {
+    method: 'POST',
+    body: validateForm,
+  })
+
+  if (validateRes.ok) {
+    const validation = await validateRes.json()
+    if (!validation.isValid) {
+      const error = new Error(validation.message || '❌ Invalid image. Please upload a crop leaf image to continue analyzing.')
+      error.validationFailed = true
+      throw error
+    }
+  }
+
+  // ✅ Step 2 — Image passed, send to Python model
   const formData = new FormData()
-  formData.append('image', file)
-  const res = await fetch(`${API_BASE}/analyze`, {
+  formData.append('file', file)
+
+  const res = await fetch(PREDICT_URL, {
     method: 'POST',
     body: formData,
   })
+
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
-    const error = new Error(err.message || 'Analysis failed')
+    const error = new Error(err.message || err.detail || 'Analysis failed')
     if (err.validationFailed) {
       error.validationFailed = true
+      error.reason = err.reason
     }
     throw error
   }
-  return res.json()
+
+  const data = await res.json()
+
+  const confidence = data.confidence ?? 0
+  const accuracyRate = confidence <= 1
+    ? Math.round(confidence * 100)
+    : Math.round(confidence)
+
+  const predictedClass = data.predicted_class ?? data.class_name ?? data.label ?? ''
+
+  if (!predictedClass || accuracyRate < 20) {
+    const error = new Error('❌ Invalid image. Please upload a crop leaf image to continue analyzing.')
+    error.validationFailed = true
+    throw error
+  }
+
+  return {
+    cropType: predictedClass,
+    accuracyRate,
+    recoveryRate: data.is_healthy === true ? 95 : 60,
+    timeTaken: data.time_taken ?? null,
+    recommendations: data.recommendations ?? null,
+    insights: data.insights ?? null,
+    all_predictions: data.all_predictions ?? [],
+    is_healthy: data.is_healthy ?? null,
+    timestamp: new Date().toISOString(),
+  }
 }
 
 async function request(path, options = {}) {
-  const url = path.startsWith('http') ? path : `${API_BASE}${path}`
+  const url = path.startsWith('http') ? path : `${EXPRESS_BASE}${path}`
   const res = await fetch(url, {
     ...options,
     headers: { 'Content-Type': 'application/json', ...options.headers },
@@ -123,7 +163,6 @@ export async function getInsights(analysisSummary) {
   })
 }
 
-// General chat endpoint for the in-app assistant
 export async function requestChat(question, context = {}, history = []) {
   return request('/chat', {
     method: 'POST',
@@ -131,7 +170,6 @@ export async function requestChat(question, context = {}, history = []) {
   })
 }
 
-// Send feedback to backend so it can email the system owners
 export async function sendFeedback(payload) {
   return request('/feedback', {
     method: 'POST',
@@ -139,7 +177,6 @@ export async function sendFeedback(payload) {
   })
 }
 
-// Allow admins to reply to a feedback submission via email (optional feature).
 export async function replyToFeedback(payload) {
   const session = await supabase?.auth?.getSession?.().catch(() => null)
   const token = session?.data?.session?.access_token

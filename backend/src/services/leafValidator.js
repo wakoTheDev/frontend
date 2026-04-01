@@ -46,7 +46,7 @@ async function analyzeImageColors(imageBuffer) {
   console.log(`Green ratio: ${(greenRatio * 100).toFixed(1)}%`)
   console.log(`======================`)
 
-  if (greenRatio >= 0.15) {
+  if (greenRatio >= 0.08) {
     return {
       isValid: true,
       message: '✅ Image validated. Proceeding with disease analysis.',

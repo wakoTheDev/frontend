@@ -4,20 +4,20 @@ import sharp from 'sharp'
 import { runCropAnalysis } from '../services/cropAnalysis.js'
 import { logger } from '../utils/logger.js'
 
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } })
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 }
+})
+
 export const analyzeRouter = Router()
 
-const KNOWN_CROP_CLASSES = [
-  'apple', 'blueberry', 'cherry', 'corn', 'maize', 'grape',
-  'orange', 'peach', 'pepper', 'potato', 'raspberry', 'soybean',
-  'squash', 'strawberry', 'tomato'
-]
-
-function isKnownCropClass(className) {
-  if (!className) return false
-  const lower = className.toLowerCase()
-  return KNOWN_CROP_CLASSES.some(crop => lower.includes(crop))
-}
+/**
+ * DEBUG ROUTE
+ */
+analyzeRouter.get('/analyze/test', (req, res) => {
+  logger.info('Analyze router test hit')
+  res.json({ status: 'analyze route working' })
+})
 
 async function hasLeafColors(imageBuffer) {
   const { data, info } = await sharp(imageBuffer)
@@ -39,32 +39,15 @@ async function hasLeafColors(imageBuffer) {
     const g = data[i + 1]
     const b = data[i + 2]
 
-    // Green (healthy leaf)
     if (g > r + 10 && g > b + 10 && g > 40) greenPixels++
-
-    // Brown/yellow (diseased or dried leaf)
     if (r > 80 && g > 50 && b < 100 && r >= g && g > b && r - b > 20) brownPixels++
-
-    // Skin tone (human face/body)
-    if (
-      r > 95 && g > 40 && b > 20 &&
-      r > g && r > b &&
-      Math.abs(r - g) > 15 &&
-      r - b > 25 &&
-      g - b >= 0 && g - b < 90 &&
-      r < 250 &&
-      !(r > 200 && g > 200 && b > 200)
-    ) skinPixels++
-
-    // Gray (car, road, building, metal)
+    if (r > 95 && g > 40 && b > 20 && r > g && r > b) skinPixels++
     if (
       Math.abs(r - g) < 25 &&
       Math.abs(g - b) < 25 &&
       Math.abs(r - b) < 25 &&
       r > 40
     ) grayPixels++
-
-    // Blue (sky, water)
     if (b > r + 20 && b > g + 10) bluePixels++
   }
 
@@ -74,70 +57,78 @@ async function hasLeafColors(imageBuffer) {
   const grayRatio = grayPixels / pixels
   const blueRatio = bluePixels / pixels
 
-  console.log('=== COLOR ANALYSIS ===')
-  console.log(`Green: ${(greenRatio * 100).toFixed(1)}%`)
-  console.log(`Brown: ${(brownRatio * 100).toFixed(1)}%`)
-  console.log(`Skin:  ${(skinRatio * 100).toFixed(1)}%`)
-  console.log(`Gray:  ${(grayRatio * 100).toFixed(1)}%`)
-  console.log(`Blue:  ${(blueRatio * 100).toFixed(1)}%`)
-  console.log('======================')
+  logger.debug('COLOR ANALYSIS', { greenRatio, brownRatio, skinRatio, grayRatio, blueRatio })
 
-  // Hard rejections
   if (skinRatio > 0.20) return { valid: false, reason: 'human detected' }
   if (grayRatio > 0.45) return { valid: false, reason: 'non-plant object detected' }
   if (blueRatio > 0.40) return { valid: false, reason: 'sky or water detected' }
   if (skinRatio > 0.10 && greenRatio < 0.10) return { valid: false, reason: 'human detected' }
 
-  // Must have plant colors
   if (greenRatio >= 0.20) return { valid: true }
   if (greenRatio >= 0.10 && brownRatio >= 0.08) return { valid: true }
+
+  // ✅ Also accept yellow/pale leaves (diseased crops often lose green)
+  const yellowPixels_approx = greenPixels + brownPixels
+  const yellowRatio = yellowPixels_approx / pixels
+  if (yellowRatio >= 0.15) return { valid: true }
 
   return { valid: false, reason: 'no plant colors detected' }
 }
 
+/**
+ * MAIN ANALYZE ROUTE
+ */
 analyzeRouter.post('/analyze', upload.single('image'), async (req, res) => {
   try {
-    logger.debug('POST /api/analyze received', req.file ? `image size ${req.file.size}` : 'no file')
+    logger.info('POST /api/analyze triggered')
+
     const file = req.file
 
     if (!file) {
+      logger.warn('No image uploaded')
       return res.status(400).json({ message: 'No image file provided' })
     }
 
-    // Step 1: Color check first (fast, no API needed)
+    logger.debug(`Image received: ${file.size} bytes`)
+
+    // Step 1: Color validation
     const colorCheck = await hasLeafColors(file.buffer)
+
     if (!colorCheck.valid) {
-      logger.info(`Color validation failed: ${colorCheck.reason}`)
+      logger.info(`Rejected by color filter: ${colorCheck.reason}`)
       return res.status(400).json({
-        message: '❌ Invalid image. Please take a photo of a leaf of a crop.',
+        message: '❌ Invalid image. Please upload a clear photo of a crop leaf.',
         validationFailed: true,
+        reason: colorCheck.reason,
         confidence: 0,
       })
     }
 
-    // Step 2: Run crop model
+    // Step 2: AI model analysis
     const result = await runCropAnalysis(file)
 
-    // Step 3: Validate model returned a known crop class
     const predictedClass = result.cropType || ''
     const confidence = result.accuracyRate || 0
-    const isValidCrop = isKnownCropClass(predictedClass) && confidence >= 25
 
-    if (!isValidCrop) {
-      logger.info(`Model validation failed: predicted="${predictedClass}", confidence=${confidence}%`)
+    // ✅ Removed hardcoded crop list check — trust the model for all crop types.
+    // Only reject if model returned no class at all AND very low confidence.
+    if (!predictedClass && confidence < 25) {
+      logger.info(`Rejected: no crop type detected, confidence=${confidence}`)
       return res.status(400).json({
-        message: '❌ Invalid image. Please take a photo of a leaf of a crop.',
+        message: '❌ Could not identify a crop in this image. Please upload a clear leaf photo.',
         validationFailed: true,
         confidence,
       })
     }
 
-    logger.info(`Validation passed: "${predictedClass}" at ${confidence}% confidence`)
-    logger.info('Analyze completed successfully')
-    res.json(result)
+    logger.info(`SUCCESS: ${predictedClass} (${confidence}%)`)
+
+    return res.json(result)
 
   } catch (err) {
-    logger.error('Analyze error:', err.message || err)
-    res.status(500).json({ message: err.message || 'Analysis failed' })
+    logger.error('Analyze route error:', err)
+    return res.status(500).json({
+      message: err.message || 'Analysis failed'
+    })
   }
 })
