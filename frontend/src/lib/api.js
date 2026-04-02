@@ -1,7 +1,6 @@
 import { supabase } from './supabaseClient'
 
-const PREDICT_URL = "https://web-production-0845d.up.railway.app/predict"
-const EXPRESS_BASE = "http://localhost:3001/api"
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api'
 const SETTINGS_KEY = 'cropcare-app-settings'
 const OFFLINE_CACHE_KEY = 'cropcare-offline-analysis-cache'
 
@@ -60,29 +59,10 @@ export async function analyzeCropImage(file) {
     throw new Error('No cached analysis. Connect to the internet, run an analysis, then you can view cached results offline.')
   }
 
-  // ✅ Step 1 — Validate image via Express → Claude vision
-  const validateForm = new FormData()
-  validateForm.append('file', file)
-
-  const validateRes = await fetch(`${EXPRESS_BASE}/validate`, {
-    method: 'POST',
-    body: validateForm,
-  })
-
-  if (validateRes.ok) {
-    const validation = await validateRes.json()
-    if (!validation.isValid) {
-      const error = new Error(validation.message || '❌ Invalid image. Please upload a crop leaf image to continue analyzing.')
-      error.validationFailed = true
-      throw error
-    }
-  }
-
-  // ✅ Step 2 — Image passed, send to Python model
   const formData = new FormData()
-  formData.append('file', file)
+  formData.append('image', file)
 
-  const res = await fetch(PREDICT_URL, {
+  const res = await fetch(`${API_BASE}/analyze`, {
     method: 'POST',
     body: formData,
   })
@@ -126,7 +106,7 @@ export async function analyzeCropImage(file) {
 }
 
 async function request(path, options = {}) {
-  const url = path.startsWith('http') ? path : `${EXPRESS_BASE}${path}`
+  const url = path.startsWith('http') ? path : `${API_BASE}${path}`
   const res = await fetch(url, {
     ...options,
     headers: { 'Content-Type': 'application/json', ...options.headers },
