@@ -46,7 +46,7 @@ export default function SignUp() {
           data: {
             full_name: fullName.trim(),
           },
-          emailRedirectTo: `${window.location.origin}/signin`,
+          emailRedirectTo: `${window.location.origin}/verify-email`,
         },
       })
 

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useSearchParams, Link } from 'react-router-dom'
 import { AlertTriangle, CheckCircle, XCircle } from 'lucide-react'
 import logoImage from '../assets/logo.png'
@@ -9,6 +9,19 @@ export default function DeleteAccountConfirmation() {
   const [status, setStatus] = useState('verifying') // 'verifying', 'success', 'error', 'expired'
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const closeTimerRef = useRef(null)
+  const redirectTimerRef = useRef(null)
+
+  useEffect(() => {
+    return () => {
+      if (closeTimerRef.current) {
+        clearTimeout(closeTimerRef.current)
+      }
+      if (redirectTimerRef.current) {
+        clearTimeout(redirectTimerRef.current)
+      }
+    }
+  }, [])
 
   useEffect(() => {
     const token = searchParams.get('token')
@@ -44,12 +57,20 @@ export default function DeleteAccountConfirmation() {
         }
 
         setStatus('success')
-        // Redirect to sign in after 5 seconds
-        setTimeout(() => {
+        closeTimerRef.current = setTimeout(() => {
+          try {
+            window.close()
+          } catch {
+            // Ignore close failures; browsers may block tab closing.
+          }
+        }, 3000)
+
+        redirectTimerRef.current = setTimeout(() => {
           navigate('/signin', {
+            replace: true,
             state: {
-              message: 'Your account has been permanently deleted. We\'re sorry to see you go.'
-            }
+              message: 'Your account has been permanently deleted. We\'re sorry to see you go.',
+            },
           })
         }, 5000)
       } catch (err) {
@@ -106,7 +127,7 @@ export default function DeleteAccountConfirmation() {
               Your account and all associated data have been permanently deleted.
             </p>
             <p className="text-white/80 text-xs drop-shadow-sm">
-              You will be redirected to the sign in page in a few seconds...
+              This tab will close automatically in a few seconds. If it stays open, you will be redirected to the sign in page.
             </p>
             <Link
               to="/signin"
