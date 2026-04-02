@@ -5,6 +5,7 @@ import cors from 'cors'
 import morgan from 'morgan'
 import path from 'path'
 import { fileURLToPath } from 'url'
+import { existsSync } from 'fs'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -48,25 +49,40 @@ try {
   logger.error('❌ Error loading routes:', error.message)
 }
 
-// Serve frontend
-const frontendDistPath = path.resolve(__dirname, '../../frontend/dist')
-app.use(express.static(frontendDistPath))
-
-// SPA fallback
-app.get('*', (req, res) => {
-  if (!req.path.startsWith('/api')) {
-    res.sendFile(path.join(frontendDistPath, 'index.html'))
-  } else {
-    res.status(404).json({ message: 'API endpoint not found' })
-  }
-})
-
 // Health check
 app.get('/api/health', (_, res) => {
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString()
   })
+})
+
+// Serve frontend
+const frontendDistPath = path.resolve(__dirname, '../../frontend/dist')
+const frontendIndexPath = path.join(frontendDistPath, 'index.html')
+const frontendBuildExists = existsSync(frontendIndexPath)
+
+if (frontendBuildExists) {
+  app.use(express.static(frontendDistPath))
+} else {
+  logger.error('❌ Frontend build missing:', frontendIndexPath)
+}
+
+// SPA fallback
+app.get('*', (req, res) => {
+  if (req.path.startsWith('/api')) {
+    res.status(404).json({ message: 'API endpoint not found' })
+    return
+  }
+
+  if (!frontendBuildExists) {
+    res.status(503).json({
+      message: 'Frontend build is missing. Run the frontend build before starting the server.',
+    })
+    return
+  }
+
+  res.sendFile(frontendIndexPath)
 })
 
 // Error handling middleware
